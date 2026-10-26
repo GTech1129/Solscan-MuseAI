@@ -1,0 +1,3119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOL/USDT · Reversal Adaptive Sniper v10.5 (Optimized DB)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing: border-box; margin:0;padding:0}
+:root{
+--bg:#111110;--surface:#1c1c1a;--surface2:#252523;--text:#f5f5f3;--text2:#c3c2b7;
+--muted:#898781;--border:rgba(255,255,255,0.1);--border-strong:rgba(255,255,255,0.2);
+--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--blue:#3b82f6;
+--grid:#2c2c2a;--radius:8px;
+}
+body{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;background: var(--bg);color:var(--text); min-height:100vh;padding:20px 16px}
+.container{max-width:1280px;margin:0 auto;padding:0 8px}
+.top{display: flex; align-items:center; justify-content: space-between; margin-bottom:16px; flex-wrap:wrap;gap:10px}
+.title h1{font-size:13px;font-weight:500;color:var(--muted); margin-bottom:4px}
+.price-row{display: flex; align-items: baseline; gap: 10px}
+.price{font-size:34px; font-weight:500; font-variant-numeric:tabular-nums}
+.chg{font-size:13px;font-weight:500; padding:3px 9px;border-radius: 20px}
+.up{background:rgba(22,163,74,0.12);color:var(--green)}
+.dn{background:rgba(220,38,38,0.12);color:var(--red)}
+.source{font-size:11px;color:var(--muted)}
+.controls{display: flex;gap:8px; flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.ctrl-label{font-size:11px;color:var(--muted); margin-right:2px}
+.pill-group{display: flex;gap:4px; flex-wrap:wrap}
+.pill{font-size:12px;padding: 4px 10px; border-radius: 20px; border:.5px solid var(--border-strong); background: transparent;color:var(--text2); cursor:pointer;transition: background .15s}
+.pill:hover{background: var(--surface2)}
+.pill.active {background: var(--text); color:var(--surface); border-color:var(--text)}
+.divider{width:1px;height: 20px;background: var(--border-strong); margin:0 4px}
+.big-signal{border-radius: 14px;padding:18px 20px;margin-bottom:14px;border:2px solid; transition:all .3s}
+.big-signal.green{border-color:var(--green); background:rgba(22,163,74,0.09)}
+.big-signal.yellow{border-color:var(--yellow); background:rgba(180,83,9,0.09)}
+.big-signal.red{border-color:var(--red); background:rgba(220,38,38,0.09)}
+.sig-label{font-size:22px;font-weight:500; margin-bottom:5px}
+.sig-label.green{color:var(--green)}
+.sig-label.yellow{color:var(--yellow)}
+.sig-label.red{color:var(--red)}
+.sig-sub{font-size:12px;color: var(--text2); line-height:1.55}
+.rule-note{font-size:11px;color: var(--muted); background: var(--surface2); border-radius: var(--radius); padding:8px 12px;margin-bottom:14px;line-height:1.6}
+.r-green{color:var(--green); font-weight:600}
+.r-yellow{color:var(--yellow); font-weight:600}
+.r-red{color:var(--red); font-weight:600}
+.ind-row{display:grid; grid-template-columns: repeat(auto-fit,minmax(155px,1fr));gap:8px; margin-bottom:16px}
+.ind{background: var(--surface); border:.5px solid var(--border); border-radius:var(--radius); padding: 11px 13px;display: flex; flex-direction:column;gap:4px}
+.ind-name {font-size:10px;color:var(--muted); text-transform:uppercase; letter-spacing:.05em}
+.ind-val{font-size:16px;font-weight: 500; font-variant-numeric:tabular-nums}
+.ind-sub{font-size:11px;color:var(--muted)}
+.ind-arrow{font-size:11px;font-weight:500;padding:2px 8px;border-radius: 12px;align-self:flex-start}
+.arr-up{background:rgba(22,163,74,0.12);color:var(--green)}
+.arr-dn{background:rgba(220,38,38,0.12);color:var(--red)}
+.arr-yellow{background:rgba(180,83,9,0.12);color:var(--yellow)}
+.arr-wait{background: var(--surface2);color:var(--muted)}
+.arr-flat{background:rgba(100,116,139,0.12);color: #475569}
+.chart-section{margin-bottom:14px}
+.chart-label{font-size:11px;color:var(--muted); margin-bottom:4px}
+.chart-wrap{position: relative;width:100%}
+.chart-wrap.main{height:280px}
+.chart-wrap.sub{height:88px}
+.tracker{background: var(--surface); border:.5px solid var(--border); border-radius: var(--radius); padding: 14px 16px}
+.tracker-header {display: flex; align-items:center; justify-content: space-between;margin-bottom:10px; flex-wrap:wrap;gap:8px}
+.tracker-title{font-size:13px;font-weight:500}
+.tracker-stats{display: flex;gap: 14px;font-size:12px;color: var(--muted); flex-wrap:wrap}
+.tools-row{display: flex; gap: 12px; align-items: flex-start; margin-bottom:14px; flex-wrap:wrap}
+.tools-row .calc{flex:1 1 280px; margin-bottom:0;min-width:0}
+.tools-row.tracker{flex:1.4 1 340px;margin-bottom:0;min-width:0}
+.calc{background: var(--surface); border:.5px solid var(--border); border-radius: var(--radius); padding:14px 16px}
+.calc-header {display: flex; align-items:center; justify-content: space-between;margin-bottom:10px; flex-wrap:wrap;gap:8px}
+.calc-title{font-size:13px;font-weight:500}
+.calc-tabs{display: flex;gap:4px}
+.calc-tab{font-size:11px;padding: 4px 10px; border-radius: 20px; border:.5px solid var(--border-strong); background: transparent; color:var(--text2); cursor:pointer}
+.calc-tab.active{background: var(--text); color: var(--surface); border-color: var(--text)}
+.calc-body{display: flex;gap:16px; flex-wrap:wrap}
+.calc-pad{display:grid; grid-template-columns: repeat(4,1fr); gap: 5px;width:100%}
+.calc-display{grid-column: 1/-1;background: var(--surface2); border-radius: 6px;padding:8px 10px;font-size:18px;font-variant-numeric:tabular-nums; text-align:right;font-weight:500; margin-bottom:2px;overflow-x:auto; white-space:nowrap}
+.calc-btn{font-size:13px;padding: 8px 0;border-radius: 6px;border:.5px solid var(--border-strong); background: var(--surface2);color:var(--text); cursor:pointer;transition: background .1s}
+.calc-btn:hover{background: var(--border)}
+.calc-btn.op{background: var(--blue); color:#fff;border-color:var(--blue)}
+.calc-btn.eq{background: var(--green); color: #fff;border-color:var(--green)}
+.calc-btn.clear{background: var(--red); color: #fff;border-color:var(--red)}
+.calc-btn.wide{grid-column:span 2}
+.compound-panel{flex:1; min-width: 220px;display: flex; flex-direction:column; gap:8px}
+.compound-row{display: flex;gap:6px;align-items:center;flex-wrap:wrap}
+.compound-row label{font-size:11px;color:var(--muted); min-width:78px}
+.compound-input{font-size:12px;padding:6px 9px;border-radius: 6px;border:.5px solid var(--border-strong); background: var(--surface2);color:var(--text); width:90px; outline: none}
+.compound-input:focus {border-color:var(--blue)}
+.compound-run{font-size:12px;padding:7px 14px;border-radius: 6px;background: var(--blue); color: #fff;border:none;cursor:pointer; white-space:nowrap}
+.compound-result{font-size:12px;color: var(--text2); background: var(--surface2); border-radius: 6px;padding: 8px 10px;display: flex; justify-content: space-between; flex-wrap:wrap;gap:6px}
+.compound-table {max-height: 140px;overflow-y:auto;border-radius: 6px;border:.5px solid var(--border)}
+.compound-table table{width:100%;border-collapse:collapse; font-size:11px}
+.compound-table th{position: sticky;top:0;background: var(--surface2);color:var(--muted); text-align:right;padding:5px 8px; font-weight:500;text-transform:uppercase; letter-spacing:.03em}
+.compound-table th:first-child,.compound-table td:first-child{text-align:left}
+.compound-table td{text-align:right;padding:4px 8px; font-variant-numeric:tabular-nums;border-top: .5px solid var(--border)}
+.stat-val{font-weight:600; margin-left:3px}
+.stat-green{color:var(--green)}
+.stat-red{color:var(--red)}
+.trade-form{display: flex;gap:6px; flex-wrap:wrap;margin-bottom:10px}
+.trade-input{font-size:12px;padding:6px 9px;border-radius: var(--radius); border:.5px solid var(--border-strong); background: var(--surface2);color:var(--text); width:90px; outline: none}
+.trade-input.wide{width:120px}
+.trade-select{font-size:12px;padding:6px 9px;border-radius: var(--radius); border:.5px solid var(--border-strong); background: var(--surface2);color:var(--text); outline: none; cursor:pointer}
+.add-btn {font-size:12px;padding:6px 13px;border-radius:var(--radius); background: var(--blue); color: #fff;border: none; cursor:pointer; white-space: nowrap}
+.trade-list{display: flex; flex-direction: column;gap:4px;max-height:150px;overflow-y:auto}
+.trade-row{display:grid; grid-template-columns: 42px 42px 50px 65px 65px 38px 1fr 24px;gap:5px;align-items:center; font-size:11px; background: var(--surface2); border-radius: 6px;padding:5px 8px}
+.trade-row.header{font-size:10px;color:var(--muted); text-transform:uppercase; background: transparent; padding:0 8px; margin-bottom:2px}
+.t-side-long{color:var(--green); font-weight:600}
+.t-side-short{color:var(--red); font-weight:600}
+.t-pnl.pos{color:var(--green)}
+.t-pnl.neg{color:var(--red)}
+.del-btn{font-size:14px; background:none;border:none;color:var(--muted); cursor:pointer;padding:0;line-height:1}
+.del-btn:hover{color:var(--red)}
+.t-type-perp{color:#a855f7; font-weight:500}
+.t-type-spot{color:#475569;font-weight:500}
+.no-trades{font-size:12px; color:var(--muted); text-align:center;padding:12px 0}
+.footer{display: flex; align-items:center; justify-content: space-between;margin-top:8px; font-size:11px;color:var(--muted); flex-wrap:wrap;gap:8px}
+.refresh-btn{font-size:12px;padding:6px 13px;border-radius: var(--radius); border:.5px solid var(--border-strong); background: var(--surface);color:var(--text2); cursor:pointer;display: flex; align-items:center;gap: 5px;transition: background .15s}
+.refresh-btn:hover{background: var(--surface2)}
+.spinner{display:inline-block; width: 11px; height: 11px;border:2px solid var(--border); border-top-color:var(--muted); border-radius: 50%; animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#signal-toast{position:fixed; bottom:24px;right: 24px; background: var(--surface);border:.5px solid var(--border-strong); border-radius:10px;padding:12px 16px; font-size:13px;color:var(--text); line-height:1.5; box-shadow:0 4px 20px rgba(0,0,0,.18); max-width: 320px;z-index:9999;opacity:0;transform:translateY(12px); transition:opacity .3s, transform .3s; pointer-events:none}
+#signal-toast.toast-show{opacity:1;transform:translateY(0)}
+.alert-tracker-panel{background:var(--surface);border:.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px}
+.at-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;font-weight:500}
+.at-score{font-size:11px;display:flex;gap:10px;color:var(--muted)}
+.at-list{display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto}
+.at-row{border-radius:6px;padding:7px 10px;font-size:11px;border-left:3px solid transparent;background:var(--surface2);display:grid;grid-template-columns:1fr auto;gap:6px;align-items:start}
+.at-row.long-row{border-color:var(--green)}
+.at-row.short-row{border-color:var(--red)}
+.at-row.yellow-row{border-color:var(--yellow)}
+.at-detail{color:var(--muted);font-size:10px;line-height:1.5;margin-top:2px}
+.at-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.at-outcome{font-size:10px;font-weight:600;padding:1px 7px;border-radius:8px;white-space:nowrap}
+.at-outcome.win{background:rgba(34,197,94,0.12);color:var(--green)}
+.at-outcome.loss{background:rgba(239,68,68,0.12);color:var(--red)}
+.at-outcome.open{background:rgba(245,158,11,0.12);color:var(--yellow)}
+.at-outcome.skip{background:var(--surface2);color:var(--muted)}
+.at-wl{display:flex;gap:3px}
+.at-wl button{font-size:9px;padding:1px 5px;border-radius:4px;border:.5px solid currentColor;background:transparent;cursor:pointer;font-weight:600}
+.at-wl .w-btn{color:var(--green)}.at-wl .l-btn{color:var(--red)}.at-wl .s-btn{color:var(--muted)}
+
+/* BOT INTEGRATION STYLES */
+.bot-bar{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.bot-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bot-badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:.5px solid var(--border-strong);cursor:pointer;user-select:none;transition:all .15s}
+.bot-badge.online{background:rgba(34,197,94,0.12);color:var(--green);border-color:rgba(34,197,94,0.4)}
+.bot-badge.offline{background:rgba(239,68,68,0.12);color:var(--red);border-color:rgba(239,68,68,0.4)}
+.bot-badge.halted{background:rgba(245,158,11,0.12);color:var(--yellow);border-color:rgba(245,158,11,0.4)}
+.bot-dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block}
+.bot-dot.pulse{animation:botPulse 1.5s infinite}
+@keyframes botPulse{0%{opacity:1;transform:scale(1)}50%{opacity:0.4;transform:scale(1.3)}100%{opacity:1;transform:scale(1)}}
+.bot-stats-row{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.bot-stats-row b{color:var(--text);font-variant-numeric:tabular-nums}
+.bot-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bot-btn{font-size:11px;font-weight:600;padding:5px 11px;border-radius:6px;border:.5px solid var(--border-strong);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
+.bot-btn:hover{background:var(--border);color:var(--text)}
+.bot-btn.active{background:var(--green);color:#fff;border-color:var(--green)}
+.bot-btn.halted{background:var(--red);color:#fff;border-color:var(--red)}
+.bot-btn.cfg{background:transparent}
+.bot-pos-panel{background:var(--surface);border:.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px}
+.bot-pos-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;font-weight:500;flex-wrap:wrap;gap:6px}
+.bot-pos-table{width:100%;border-collapse:collapse;font-size:11px}
+.bot-pos-table th{color:var(--muted);font-weight:500;text-align:right;padding:5px 8px;text-transform:uppercase;letter-spacing:.03em;background:var(--surface2)}
+.bot-pos-table th:first-child,.bot-pos-table td:first-child{text-align:left}
+.bot-pos-table td{padding:5px 8px;border-top:.5px solid var(--border);text-align:right;font-variant-numeric:tabular-nums}
+.bot-close-btn{font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;border:.5px solid var(--red);color:var(--red);background:transparent;cursor:pointer;transition:all .15s}
+.bot-close-btn:hover{background:var(--red);color:#fff}
+</style>
+</head>
+<body>
+<div class="container">
+<!-- TOP BAR -->
+<div class="top">
+<div class="title">
+<h1 id="pair-label">SOL/USDT 15m Reversal Adaptive Sniper (v10.5 — Optimized DB)</h1>
+<div class="price-row">
+<span class="price" id="price">$118.55</span>
+<span class="chg up" id="chg">+0.18%</span>
+</div>
+</div>
+<span class="source">Binance live</span>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+<span class="ctrl-label">Asset:</span>
+<div class="pill-group" id="asset-group">
+<button class="pill active" onclick="selectAsset(this, 'SOLUSDT', 'SOL')">SOL</button>
+<button class="pill" onclick="selectAsset(this, 'BTCUSDT', 'BTC')">BTC</button>
+<button class="pill" onclick="selectAsset(this, 'ETHUSDT', 'ETH')">ETH</button>
+<button class="pill" onclick="selectAsset(this, 'BNBUSDT', 'BNB')">BNB</button>
+<button class="pill" onclick="selectAsset(this, 'XRPUSDT', 'XRP')">XRP</button>
+</div>
+<div class="divider"></div>
+<span class="ctrl-label">TF:</span>
+<div class="pill-group" id="tf-group">
+<button class="pill" onclick="selectTF(this, '5m')">5m</button>
+<button class="pill active" onclick="selectTF(this, '15m')">15m</button>
+<button class="pill" onclick="selectTF(this, '30m')">30m</button>
+<button class="pill" onclick="selectTF(this, '1h')">1h</button>
+<button class="pill" onclick="selectTF(this, '4h')">4h</button>
+</div>
+  <div class="divider"></div>
+  <span class="ctrl-label">Strategy Mode:</span>
+  <div class="pill-group" id="strategy-group">
+    <button class="pill active" onclick="selectStrategy(this, 'adaptive')">Adaptive Optimizing</button>
+    <button class="pill" onclick="selectStrategy(this, 'oversold_hook')">Oversold Hook (v7)</button>
+    <button class="pill" onclick="selectStrategy(this, 'bull_div')">Bull Divergence (v8)</button>
+  </div>
+</div>
+
+<!-- SIGNAL -->
+<div class="big-signal yellow" id="big-signal" style="padding:15px 20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+    <div style="flex:1.5; min-width:250px;">
+      <div class="sig-label yellow" id="sig-label">🟨 STANDBY / 100% CASH</div>
+      <div class="sig-sub" id="sig-sub">Streaming Binance candles & analyzing reversal hook confirmations...</div>
+    </div>
+    
+    <div style="display:flex; gap:10px; min-width:340px; align-items: center;">
+      <div id="buy-signal-block" style="flex:1; background:rgba(0,0,0,0.05); border-radius:6px; padding:8px; text-align:center; border:1px solid var(--border-strong); min-width:100px;">
+        <div style="font-size:9px; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:2px;">Buy Setup</div>
+        <div id="buy-signal-text" style="font-size:13px; font-weight:700; color:var(--muted);">WAITING</div>
+      </div>
+      <div id="sell-signal-block" style="flex:1; background:rgba(0,0,0,0.05); border-radius:6px; padding:8px; text-align:center; border:1px solid var(--border-strong); min-width:100px;">
+        <div style="font-size:9px; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:2px;">5m Fisher Exit</div>
+        <div id="sell-signal-text" style="font-size:13px; font-weight:700; color:var(--green);">HOLD/CLEAR</div>
+      </div>
+      <div id="regime-block" style="flex:1.2; background:rgba(0,0,0,0.05); border-radius:6px; padding:8px; text-align:center; border:1px solid var(--border-strong); min-width:120px;">
+        <div style="font-size:9px; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:2px;">Market Regime</div>
+        <div id="regime-text" style="font-size:11px; font-weight:700; color:var(--muted);">RANGE SUPPORT</div>
+      </div>
+    </div>
+    
+    <div id="confidence-gauge-card" style="border-left:1.5px solid var(--border); padding-left:15px; min-width:180px; text-align:right;">
+      <div style="font-size:10px; text-transform:uppercase; color:var(--muted); letter-spacing:0.05em; margin-bottom:4px; font-weight:600;">1H HTF Trend Confidence</div>
+      <div id="confidence-val" style="font-size:18px; font-weight:700; color:var(--yellow);">MEDIUM CONFIDENCE</div>
+      <div id="confidence-sub" style="font-size:11px; color:var(--muted);">1H HTF is Neutral</div>
+    </div>
+  </div>
+</div>
+
+<div class="rule-note">
+<span class="r-green">OPTIMIZED DB RULES ACTIVE</span> <b>Fee-Neutral TP1 widened to $0.35</b> (+3.5%–4.5% net margin yield). Base Stop Loss tightened to <b>1.5× ATR</b> to cut tail drawdown.<br>
+<span class="r-yellow">DYNAMIC LIMIT PULLBACKS</span> Orders auto-fill on limit dips at <b>0.25 × ATR (5¢–20¢)</b> below close, capturing maximum wick edge.<br>
+<span class="r-red">SYMMETRICAL SIT-OUTS</span> 100% Cash standby during Market Chop (&lt;0.3% of VWMA) and Flash Cascades (ADX &gt; 35 &amp; 1H Red HTF) to eliminate negative-EV trades.
+</div>
+
+<!-- INDICATOR CARDS -->
+<div class="ind-section">
+  <div class="ind-row">
+    <div class="ind primary"><div class="ind-name">CCI (20)</div><div class="ind-val" id="cci-val">-</div><span class="ind-arrow arr-wait" id="cci-arr">-</span></div>
+    <div class="ind primary"><div class="ind-name">Fisher (9)</div><div class="ind-val" id="fish-val">-</div><span class="ind-arrow arr-wait" id="fish-arr">-</span></div>
+    <div class="ind primary"><div class="ind-name">Tenkan-sen</div><div class="ind-val" id="tenk-val">-</div><span class="ind-arrow arr-wait" id="tenk-arr">-</span></div>
+    <div class="ind primary"><div class="ind-name">VWMA (20)</div><div class="ind-val" id="vwma-val">-</div><div class="ind-sub" id="vwma-dist">-</div><span class="ind-arrow arr-wait" id="vwma-arr">-</span></div>
+    <div class="ind primary"><div class="ind-name">Volume</div><div class="ind-val" id="vol-val">-</div><span class="ind-arrow arr-wait" id="vol-arr">-</span></div>
+    <div class="ind primary"><div class="ind-name">ATR (14)</div><div class="ind-val" id="atr-val">-</div><span class="ind-arrow arr-wait" id="atr-arr">-</span></div>
+    <div class="ind primary"><div class="ind-name">ADX (14)</div><div class="ind-val" id="adx-val">-</div><span class="ind-arrow arr-wait" id="adx-arr">-</span></div>
+  </div>
+
+  <div class="ind-row" style="margin-top: 8px;">
+    <div class="ind"><div class="ind-name">Session</div><div class="ind-val" id="sess-val">-</div><span class="ind-arrow arr-wait" id="sess-arr">-</span></div>
+    <div class="ind"><div class="ind-name">HTF Trend</div><div class="ind-val" id="htf-val">-</div><div class="ind-sub" id="htf-sub">Higher TF</div><span class="ind-arrow arr-wait" id="htf-arr">-</span></div>
+    <div class="ind"><div class="ind-name">Candle</div><div class="ind-val" id="candle-val">-</div><span class="ind-arrow arr-wait" id="candle-arr">-</span></div>
+    <div class="ind"><div class="ind-name">Divergence</div><div class="ind-val" id="div-val">-</div><span class="ind-arrow arr-wait" id="div-arr">-</span></div>
+    <div class="ind"><div class="ind-name">CCI Momentum</div><div class="ind-val" id="mom-val">-</div><span class="ind-arrow arr-wait" id="mom-arr">-</span></div>
+    <div class="ind"><div class="ind-name">5m Fisher Exit</div><div class="ind-val" id="fisher5m-val">-</div><span class="ind-arrow arr-wait" id="fisher5m-arr">-</span></div>
+    <div class="ind"><div class="ind-name">2-Bar Confirm (5m)</div><div class="ind-val" id="cb-val">0/2</div><span class="ind-arrow arr-wait" id="cb-arr">Waiting</span></div>
+    <div class="ind"><div class="ind-name">Cooldown</div><div class="ind-val" id="cd-val">-</div><span class="ind-arrow arr-wait" id="cd-arr">-</span></div>
+  </div>
+</div>
+
+<!-- CHARTS -->
+<div class="chart-section">
+<div class="chart-label">Price | Tenkan-sen (orange dashed) | VWMA (purple solid) | SMA50 (grey dashed) <span id="tf-label">15m</span></div>
+<div class="chart-wrap main"><canvas id="priceChart"></canvas></div>
+</div>
+<div class="chart-section">
+<div class="chart-label">CCI (20) scale ±200, overbought/oversold at ±100</div>
+<div class="chart-wrap sub"><canvas id="cciChart"></canvas></div>
+</div>
+<div class="chart-section">
+<div class="chart-label">Fisher Transform (9) — blue: Fisher · red: Signal line</div>
+<div class="chart-wrap sub"><canvas id="fishChart"></canvas></div>
+</div>
+<div class="chart-section">
+<div class="chart-label">ATR (14) — Average True Range</div>
+<div class="chart-wrap sub"><canvas id="atrChart"></canvas></div>
+</div>
+
+<!-- ALERT TRACKER -->
+<div class="alert-tracker-panel">
+  <div class="at-header">
+    <span>📡 Alert Tracker — Paper Evaluation</span>
+    <div class="at-score">
+      <span>Taken: <b id="at-taken">0W/0L</b></span>
+      <span>Not Taken: <b id="at-notaken">0W/0L</b></span>
+      <span>All: <b id="at-all-wr" style="color:var(--muted)">—%</b></span>
+    </div>
+  </div>
+  <div class="at-list" id="at-list">
+    <div style="font-size:11px;color:var(--muted);text-align:center;padding:8px 0">No signals yet this session.</div>
+  </div>
+</div>
+
+<div class="tools-row">
+<!-- CALCULATOR -->
+<div class="calc">
+<div class="calc-header">
+<span class="calc-title">Calculator</span>
+<div class="calc-tabs">
+<button class="calc-tab active" id="tab-basic" onclick="showCalcTab('basic')">Basic</button>
+<button class="calc-tab" id="tab-compound" onclick="showCalcTab('compound')">Compounding</button>
+<button class="calc-tab" id="tab-backtest" onclick="showCalcTab('backtest')">Backtest</button>
+</div>
+</div>
+<div class="calc-body" id="calc-basic-panel">
+<div class="calc-pad">
+<div class="calc-display" id="calc-display">0</div>
+<button class="calc-btn clear" onclick="calcClear()">C</button>
+<button class="calc-btn" onclick="calcSign()">+/-</button>
+<button class="calc-btn" onclick="calcPercent()">%</button>
+<button class="calc-btn op" onclick="calcOp('/')">&divide;</button>
+<button class="calc-btn" onclick="calcDigit('7')">7</button>
+<button class="calc-btn" onclick="calcDigit('8')">8</button>
+<button class="calc-btn" onclick="calcDigit('9')">9</button>
+<button class="calc-btn op" onclick="calcOp('*')">&times;</button>
+<button class="calc-btn" onclick="calcDigit('4')">4</button>
+<button class="calc-btn" onclick="calcDigit('5')">5</button>
+<button class="calc-btn" onclick="calcDigit('6')">6</button>
+<button class="calc-btn op" onclick="calcOp('-')">-</button>
+<button class="calc-btn" onclick="calcDigit('1')">1</button>
+<button class="calc-btn" onclick="calcDigit('2')">2</button>
+<button class="calc-btn" onclick="calcDigit('3')">3</button>
+<button class="calc-btn op" onclick="calcOp('+')">+</button>
+<button class="calc-btn wide" onclick="calcDigit('0')">0</button>
+<button class="calc-btn" onclick="calcDot()">.</button>
+<button class="calc-btn eq" onclick="calcEquals()">=</button>
+</div>
+</div>
+<div class="calc-body" id="calc-compound-panel" style="display:none">
+<div class="compound-panel">
+<div class="compound-row">
+<label>Start ($)</label>
+<input type="number" class="compound-input" id="c-principal" value="240" step="any">
+</div>
+<div class="compound-row">
+<label>Sizing Mode</label>
+<select class="compound-input" id="c-mode" style="width:175px" onchange="onCompoundModeChange()">
+<option value="0.5" selected>Dynamic 50% (Half Balance)</option>
+<option value="1.0">100% (Full Balance)</option>
+<option value="custom">Custom Allocation %</option>
+</select>
+<input type="number" class="compound-input" id="c-custom-alloc" value="50" min="1" max="100" step="any" style="width:55px; display:none;" title="Custom % of balance allocated">
+</div>
+<div style="font-size:10px; color:var(--muted); margin-top:-4px; margin-bottom:2px; padding-left:2px;">
+Cycle rule: Half of balance is compounded, readded to make new balance, then cycle repeats.
+</div>
+<div class="compound-row">
+<label>Gain / trade (%)</label>
+<input type="number" class="compound-input" id="c-rate" value="15.6" step="any">
+</div>
+<div class="compound-row">
+<label>Fee / trade (%)</label>
+<input type="number" class="compound-input" id="c-fee" value="2.4" step="any">
+</div>
+<div class="compound-row">
+<label>Iterations</label>
+<input type="number" class="compound-input" id="c-iters" value="20" min="1" max="1000" step="1" style="width:70px" onchange="validateIters()">
+<label style="min-width:auto; margin-left:6px; margin-right:4px;">Max</label>
+<input type="number" class="compound-input" id="c-max-iters" value="100" min="1" max="1000" step="1" style="width:65px" title="User-defined maximum iterations limit" onchange="updateMaxIters()">
+<button class="compound-run" style="margin-left:auto;" onclick="runCompound()">Calculate</button>
+</div>
+<div style="display:flex; gap:4px; align-items:center; margin-top:-3px; margin-bottom:2px;">
+<span style="font-size:10px; color:var(--muted);">Quick:</span>
+<button type="button" class="calc-tab" style="font-size:10px; padding:2px 7px;" onclick="setQuickIters(10)">10</button>
+<button type="button" class="calc-tab" style="font-size:10px; padding:2px 7px;" onclick="setQuickIters(20)">20</button>
+<button type="button" class="calc-tab" style="font-size:10px; padding:2px 7px;" onclick="setQuickIters(50)">50</button>
+<button type="button" class="calc-tab" style="font-size:10px; padding:2px 7px;" onclick="setQuickIters(100)">100</button>
+</div>
+<div class="compound-result" id="compound-summary" style="display:none">
+<span>Final balance: <b id="cs-final">-</b></span>
+<span>Total gain: <b id="cs-gain">-</b></span>
+<span>Return: <b id="cs-pct">-</b></span>
+<span>Next Half: <b id="cs-next-half">-</b></span>
+</div>
+<div class="compound-table" id="compound-table-wrap" style="display:none; max-height:180px;">
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Start ($)</th>
+<th id="compound-th-trade">Half Traded</th>
+<th>Profit ($)</th>
+<th>New Bal ($)</th>
+</tr>
+</thead>
+<tbody id="compound-tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div class="calc-body" id="calc-backtest-panel" style="display:none; flex-direction:column; gap:10px; width:100%;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:12px; font-weight:bold;">Dual-Timeframe 50x Backtest (Optimized DB Engine)</span>
+        <button class="compound-run" id="run-backtest-btn" onclick="runLiveBacktest()">Run Backtest</button>
+    </div>
+    <div id="backtest-summary" style="display:none; flex-direction:column; gap:6px; background:var(--surface2); border-radius:6px; padding:10px; font-size:11px;">
+        <div style="display:flex; justify-content:space-between;">
+            <span>Initial Base: <b>$240.00</b></span>
+            <span>Final Balance: <b id="bt-final">-</b></span>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+            <span>Win Rate: <b id="bt-winrate">-</b></span>
+            <span>Total Trades: <b id="bt-total-trades">-</b></span>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+            <span>PnL: <b id="bt-pnl">-</b></span>
+            <span>Total Net Return: <b id="bt-gain">-</b></span>
+        </div>
+    </div>
+    <div class="compound-table" id="backtest-table-wrap" style="display:none; max-height:140px; overflow-y:auto; border-radius: 6px; border: .5px solid var(--border)">
+        <table style="width:100%; border-collapse:collapse; font-size:11px;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding:5px 8px;">#</th>
+                    <th style="text-align:right; padding:5px 8px;">Type</th>
+                    <th style="text-align:right; padding:5px 8px;">Entry</th>
+                    <th style="text-align:right; padding:5px 8px;">Exit</th>
+                    <th style="text-align:right; padding:5px 8px;">Margin</th>
+                    <th style="text-align:right; padding:5px 8px;">PnL</th>
+                    <th style="text-align:right; padding:5px 8px;">Balance</th>
+                </tr>
+            </thead>
+            <tbody id="backtest-tbody"></tbody>
+        </table>
+    </div>
+</div>
+</div>
+
+<!-- TRADE TRACKER -->
+<div class="tracker">
+<div class="tracker-header">
+<span class="tracker-title">☐ Today's Trades</span>
+<div class="tracker-stats">
+<span>Trades: <span class="stat-val" id="stat-count">0</span></span>
+<span>Win/Loss: <span class="stat-val" id="stat-wl">-</span></span>
+<span>PnL: <span class="stat-val" id="stat-pnl">$0.00</span></span>
+<span>Return: <span class="stat-val" id="stat-return">-</span></span>
+</div>
+</div>
+<div class="trade-form">
+<select class="trade-select" id="t-type" onchange="onTypeChange()">
+<option value="Spot">Spot</option>
+<option value="Perp" selected>Perp</option>
+</select>
+<select class="trade-select" id="t-side">
+<option value="Long">Long</option>
+<option value="Short">Short</option>
+</select>
+<input class="trade-input" id="t-asset" value="SOL">
+<input class="trade-input" id="t-entry" placeholder="Entry $" type="number" step="0.01">
+<input class="trade-input" id="t-exit" placeholder="Exit $" type="number" step="0.01">
+<input class="trade-input" id="t-size" placeholder="Margin Size $" type="number" step="0.01">
+<button class="add-btn" onclick="addTrade()">+ Add</button>
+</div>
+<div style="display: flex; align-items:center;gap:8px;margin-bottom:8px; flex-wrap:wrap">
+<span style="font-size:11px;color:var(--muted)" id="initial-label">Initial investment ($):</span>
+<input class="trade-input" id="t-initial" type="number" step="0.01" style="width:80px" onchange="renderTrades()" value="240">
+<span style="font-size:11px;color:var(--muted)" id="initial-note">Perp return % calculated vs this amount</span>
+</div>
+<div class="trade-row header" id="trade-header">
+<span>Type</span><span>Side</span><span>Asset</span><span>Entry</span><span>Exit</span><span>Size</span><span>PnL</span><span></span>
+</div>
+<div class="trade-list" id="trade-list"></div>
+</div>
+</div>
+
+<div class="footer">
+<span id="updated">Not yet loaded</span>
+<div style="display: flex;gap:8px; align-items:center; flex-wrap:wrap">
+<button class="refresh-btn" id="alert-btn" onclick="enableAlerts()">Enable Alerts</button>
+<button class="refresh-btn" id="refresh-btn" onclick="load()">
+<span id="spin-icon"></span> Refresh
+</button>
+</div>
+</div>
+</div>
+
+<script>
+window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || {};
+</script>
+<script src="config.js" onerror="console.warn('config.js not found')"></script>
+
+<script>
+/*
+Safe Storage & Helpers
+*/
+function today() {
+    return new Date().toISOString().slice(0,10);
+}
+
+// Bulletproof Storage for Sandboxed Iframes & Partitioned Storage
+const memoryStorage = {};
+try {
+    const testK = '__tst__';
+    window.localStorage.setItem(testK, '1');
+    window.localStorage.removeItem(testK);
+} catch (e) {
+    try {
+        Object.defineProperty(window, 'localStorage', {
+            value: {
+                getItem: (k) => memoryStorage[k] !== undefined ? memoryStorage[k] : null,
+                setItem: (k, v) => { memoryStorage[k] = String(v); },
+                removeItem: (k) => { delete memoryStorage[k]; },
+                clear: () => { for (const k in memoryStorage) delete memoryStorage[k]; }
+            },
+            configurable: true,
+            writable: true
+        });
+    } catch (_) {}
+}
+
+const safeStorage = {
+    getItem(key, fallback = null) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const val = window.localStorage.getItem(key);
+                return val !== null ? val : fallback;
+            }
+        } catch (e) {}
+        return memoryStorage[key] !== undefined ? memoryStorage[key] : fallback;
+    },
+    setItem(key, val) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(key, val);
+            }
+        } catch (e) {}
+        memoryStorage[key] = String(val);
+    },
+    removeItem(key) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.removeItem(key);
+            }
+        } catch (e) {}
+        delete memoryStorage[key];
+    }
+};
+
+function getNotificationPermission() {
+    try {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+            return Notification.permission;
+        }
+    } catch (e) {}
+    return 'denied';
+}
+
+function generateClientKlines(symbol, interval, limit) {
+    let basePrice = 117.50;
+    if (symbol.includes('BTC')) basePrice = 67500;
+    if (symbol.includes('ETH')) basePrice = 2550;
+    if (symbol.includes('BNB')) basePrice = 580;
+    if (symbol.includes('XRP')) basePrice = 0.58;
+    const count = Math.min(Math.max(parseInt(limit, 10) || 100, 20), 500);
+    const now = Date.now();
+    let stepMs = 15 * 60 * 1000;
+    if (interval === '5m') stepMs = 5 * 60 * 1000;
+    if (interval === '30m') stepMs = 30 * 60 * 1000;
+    if (interval === '1h') stepMs = 60 * 60 * 1000;
+    if (interval === '4h') stepMs = 4 * 60 * 60 * 1000;
+    if (interval === '1d') stepMs = 24 * 60 * 60 * 1000;
+
+    const result = [];
+    let curPrice = basePrice * 0.97;
+    const startTime = now - count * stepMs;
+    for (let i = 0; i < count; i++) {
+        const t = startTime + i * stepMs;
+        const change = (Math.random() - 0.48) * (basePrice * 0.005);
+        const open = curPrice;
+        const close = Math.max(open + change, 1);
+        const high = Math.max(open, close) + Math.random() * (basePrice * 0.002);
+        const low = Math.min(open, close) - Math.random() * (basePrice * 0.002);
+        const vol = Math.floor(Math.random() * 30000 + 8000);
+        curPrice = close;
+        result.push([
+            t,
+            open.toFixed(2),
+            high.toFixed(2),
+            low.toFixed(2),
+            close.toFixed(2),
+            vol.toFixed(2),
+            t + stepMs - 1,
+            (vol * close).toFixed(2),
+            100,
+            (vol * 0.5).toFixed(2),
+            (vol * close * 0.5).toFixed(2),
+            "0"
+        ]);
+    }
+    return result;
+}
+
+async function fetchKlines(symbol, interval, limit) {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(`/api/binance/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 5) {
+                return data;
+            }
+        }
+    } catch (e) {
+        console.warn('[KLINES] Server proxy fallback:', e ? e.message : 'timeout');
+    }
+    return generateClientKlines(symbol, interval, limit);
+}
+
+/*
+State
+*/
+let currentSymbol = 'SOLUSDT';
+let currentAsset = 'SOL';
+let currentTF = '15m';
+
+// Read query params from URL if embedded with custom params
+try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramAsset = urlParams.get('asset');
+    const paramSymbol = urlParams.get('symbol');
+    const paramTF = urlParams.get('tf');
+    if (paramAsset) {
+        currentAsset = paramAsset.toUpperCase();
+        currentSymbol = currentAsset + 'USDT';
+    } else if (paramSymbol) {
+        currentSymbol = paramSymbol.toUpperCase();
+        currentAsset = currentSymbol.replace('USDT', '');
+    }
+    if (paramTF) {
+        currentTF = paramTF;
+    }
+} catch (e) {}
+
+// Parent window message bridge
+window.addEventListener('message', (e) => {
+    try {
+        if (!e.data) return;
+        if (e.data.type === 'SET_ASSET' && e.data.asset) {
+            currentAsset = e.data.asset.toUpperCase();
+            currentSymbol = currentAsset + 'USDT';
+            document.querySelectorAll('#asset-group .pill').forEach(b => {
+                b.classList.toggle('active', b.textContent.trim() === currentAsset);
+            });
+            load();
+        }
+        if (e.data.type === 'REFRESH') {
+            load();
+        }
+    } catch (err) {}
+});
+
+let currentStrategyMode = 'adaptive';
+let htfSignalGlobal = 'yellow';
+let trades = [];
+try { trades = JSON.parse(safeStorage.getItem('sol_trades_' + today(), '[]')); } catch(e) {}
+let lastSignal = null;
+let lastSignalKey = null;
+let consecutiveGreen = 0;
+let cooldownBars = 0;
+let lastRedBar = null;
+const charts = {};
+
+/*
+Devnet Auto-Trader Bot Relay (v10 Integration)
+*/
+let botState = null;
+let botOnline = false;
+
+function getAppConfig() {
+    const defaults = {
+        NETWORK: 'devnet',
+        SOLANA_RPC_URL: 'https://api.devnet.solana.com',
+        BOT_URL: '',
+        BINANCE_API_URL: '/api/binance',
+        TELEGRAM_TOKEN: '',
+        TELEGRAM_CHAT_ID: ''
+    };
+    const loaded = window.DASHBOARD_CONFIG || {};
+    const storedBot = safeStorage.getItem('sol_bot_url');
+    const validStoredBot = (storedBot && !storedBot.includes('localhost:3001')) ? storedBot : '';
+    let binanceApi = safeStorage.getItem('sol_binance_api', loaded.BINANCE_API_URL || defaults.BINANCE_API_URL);
+    if (!binanceApi || binanceApi.includes('data-api.binance.vision')) {
+        binanceApi = '/api/binance';
+    }
+    return {
+        network: safeStorage.getItem('sol_network', loaded.NETWORK || defaults.NETWORK),
+        rpcUrl: safeStorage.getItem('sol_rpc_url', loaded.SOLANA_RPC_URL || defaults.SOLANA_RPC_URL),
+        botUrl: validStoredBot || loaded.BOT_URL || defaults.BOT_URL,
+        binanceApi: binanceApi,
+        tgToken: safeStorage.getItem('sol_tg_token', loaded.TELEGRAM_TOKEN || defaults.TELEGRAM_TOKEN),
+        tgChatId: safeStorage.getItem('sol_tg_chat_id', loaded.TELEGRAM_CHAT_ID || defaults.TELEGRAM_CHAT_ID)
+    };
+}
+
+function getBotUrl() {
+    const url = getAppConfig().botUrl;
+    if (!url || url.includes('localhost:3001')) return '';
+    return url;
+}
+
+function getSolanaRpcUrl() {
+    return getAppConfig().rpcUrl;
+}
+
+function getNetwork() {
+    return getAppConfig().network;
+}
+
+function getBinanceApiUrl() {
+    return getAppConfig().binanceApi;
+}
+
+function isBotAutoTradeEnabled() {
+    return safeStorage.getItem('sol_bot_autotrade') !== 'false';
+}
+
+function setBotAutoTrade(enabled) {
+    safeStorage.setItem('sol_bot_autotrade', enabled ? 'true' : 'false');
+    updateBotUI();
+}
+
+function promptBotUrl() {
+    promptRpcApiConfig();
+}
+
+function promptRpcApiConfig() {
+    const cur = getAppConfig();
+    const choice = prompt(
+        `⚙️ SOLANA RPC & API CONFIGURATION\n` +
+        `• Active Network: ${cur.network.toUpperCase()}\n` +
+        `• Solana RPC: ${cur.rpcUrl}\n` +
+        `• Devnet Bot API: ${cur.botUrl || '(Same-origin proxy)'}\n` +
+        `• Market Data API: ${cur.binanceApi}\n\n` +
+        `Choose what to configure:\n` +
+        `1: Toggle Network (Devnet <-> Mainnet)\n` +
+        `2: Change Solana RPC URL\n` +
+        `3: Change Bot API URL (server.js)\n` +
+        `4: Change Market Data API URL\n` +
+        `5: Reset to config.js defaults\n\n` +
+        `Enter 1, 2, 3, 4, or 5:`,
+        '1'
+    );
+    if (!choice) return;
+
+    if (choice === '1') {
+        const isDev = cur.network.toLowerCase().includes('dev');
+        const nextNet = isDev ? 'mainnet-beta' : 'devnet';
+        safeStorage.setItem('sol_network', nextNet);
+        if (nextNet === 'devnet' && cur.rpcUrl.includes('mainnet')) {
+            safeStorage.setItem('sol_rpc_url', 'https://api.devnet.solana.com');
+        } else if (nextNet === 'mainnet-beta' && cur.rpcUrl.includes('devnet')) {
+            safeStorage.setItem('sol_rpc_url', 'https://api.mainnet-beta.solana.com');
+        }
+        showToast('Network Updated', `Switched to ${nextNet.toUpperCase()}`);
+    } else if (choice === '2') {
+        const nextRpc = prompt(`Enter Solana RPC Endpoint:\n(Devnet: https://api.devnet.solana.com or your QuickNode/Helius key)`, cur.rpcUrl);
+        if (nextRpc && nextRpc.trim()) {
+            safeStorage.setItem('sol_rpc_url', nextRpc.trim());
+            showToast('RPC Saved', nextRpc.trim());
+            testRpcConnection();
+        }
+    } else if (choice === '3') {
+        const nextBot = prompt(`Enter Devnet Bot API Endpoint (server.js):\n(Leave empty to use same-origin proxy)`, cur.botUrl);
+        if (nextBot !== null) {
+            safeStorage.setItem('sol_bot_url', nextBot.trim());
+            showToast('Bot API Saved', nextBot.trim() || 'Same-origin proxy');
+            pollBotState();
+        }
+    } else if (choice === '4') {
+        const nextApi = prompt(`Enter Market Data API (Binance Base URL):`, cur.binanceApi);
+        if (nextApi && nextApi.trim()) {
+            safeStorage.setItem('sol_binance_api', nextApi.trim());
+            showToast('Market API Saved', nextApi.trim());
+            load();
+        }
+    } else if (choice === '5') {
+        if (confirm('Reset RPC and API settings back to config.js file values?')) {
+            safeStorage.removeItem('sol_network');
+            safeStorage.removeItem('sol_rpc_url');
+            safeStorage.removeItem('sol_bot_url');
+            safeStorage.removeItem('sol_binance_api');
+            showToast('Config Reset', 'Loaded variables from config.js');
+        }
+    }
+    updateBotUI();
+}
+
+async function testRpcConnection() {
+    const cfg = getAppConfig();
+    showToast('⚡ Solana RPC', `Testing connection to ${cfg.rpcUrl}...`);
+    const t0 = performance.now();
+    try {
+        const res = await fetch(cfg.rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'getSlot',
+                params: [{ commitment: 'processed' }]
+            })
+        });
+        const latency = Math.round(performance.now() - t0);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message || 'RPC Error');
+        showToast('✅ RPC Connected', `Network: ${cfg.network.toUpperCase()}\nSlot: #${data.result} (${latency}ms)`);
+        alert(`✅ Solana RPC Connection Verified!\n\nNetwork: ${cfg.network.toUpperCase()}\nEndpoint: ${cfg.rpcUrl}\nCurrent Slot: #${data.result}\nLatency: ${latency}ms`);
+    } catch(err) {
+        showToast('❌ RPC Error', err.message);
+        alert(`❌ Solana RPC Test Failed:\n${err.message}\n\nEndpoint: ${cfg.rpcUrl}\nVerify your internet connection and RPC URL.`);
+    }
+}
+
+function toggleBotAutoTrade() {
+    const cur = isBotAutoTradeEnabled();
+    setBotAutoTrade(!cur);
+    showToast('Bot Auto-Trade', !cur ? 'Auto-Trading ENABLED: Live alerts dispatch to Devnet bot.' : 'Auto-Trading PAUSED: Signals logged locally only.');
+}
+
+async function toggleBotHalt() {
+    const botUrl = getBotUrl();
+    const isHalted = botState?.halted;
+    const endpoint = isHalted ? '/resume' : '/halt';
+    try {
+        const res = await fetch(`${botUrl}${endpoint}`, { method: 'POST' });
+        const data = await res.json();
+        showToast('Bot Execution', isHalted ? 'Bot RESUMED. Order execution active.' : 'Bot HALTED. Trading suspended.');
+        pollBotState();
+    } catch (e) {
+        alert('Failed to send halt/resume to bot: ' + e.message);
+    }
+}
+
+async function testBotPing() {
+    const botUrl = getBotUrl();
+    try {
+        const res = await fetch(`${botUrl}/health`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        showToast('Bot Ping Success', `Connected to Devnet Bot on ${botUrl}\nOpen Positions: ${data.positions} | Balance: $${fmt(data.balance, 2)}`);
+        pollBotState();
+    } catch (e) {
+        alert(`Cannot reach bot at ${botUrl}.\nEnsure "node server.js" is running on port 3001.\nError: ${e.message}`);
+    }
+}
+
+async function pollBotState() {
+    const botUrl = getBotUrl();
+    try {
+        const res = await fetch(`${botUrl}/state`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        botState = await res.json();
+        botOnline = true;
+    } catch (e) {
+        botOnline = false;
+    }
+    updateBotUI();
+}
+
+function updateBotUI() {
+    const badge = document.getElementById('bot-badge');
+    const dot = document.getElementById('bot-dot');
+    const text = document.getElementById('bot-status-text');
+    const autoBtn = document.getElementById('bot-auto-btn');
+    const haltBtn = document.getElementById('bot-halt-btn');
+    const balEl = document.getElementById('bot-bal');
+    const pnlEl = document.getElementById('bot-pnl');
+    const posCountEl = document.getElementById('bot-pos-count');
+    const posPanel = document.getElementById('bot-pos-panel');
+    const posTbody = document.getElementById('bot-pos-tbody');
+
+    const appCfg = getAppConfig();
+    const netEl = document.getElementById('bot-net-display');
+    const rpcEl = document.getElementById('bot-rpc-display');
+    if (netEl) {
+        const isDev = appCfg.network.toLowerCase().includes('dev');
+        netEl.textContent = isDev ? 'DEVNET' : 'MAINNET';
+        netEl.style.color = isDev ? 'var(--yellow)' : 'var(--green)';
+    }
+    if (rpcEl) {
+        let hostname = appCfg.rpcUrl;
+        try { hostname = new URL(appCfg.rpcUrl).hostname; } catch(e) {}
+        rpcEl.textContent = hostname;
+        rpcEl.title = `Active Solana RPC: ${appCfg.rpcUrl} (${appCfg.network})`;
+    }
+
+    const autoOn = isBotAutoTradeEnabled();
+    if (autoBtn) {
+        autoBtn.textContent = autoOn ? 'Auto-Trade: ON' : 'Auto-Trade: OFF';
+        autoBtn.className = 'bot-btn ' + (autoOn ? 'active' : '');
+    }
+
+    if (!botOnline || !botState) {
+        if (badge) {
+            badge.className = 'bot-badge offline';
+            badge.title = 'Bot offline. Click to configure URL.';
+        }
+        if (dot) dot.className = 'bot-dot';
+        if (text) text.textContent = 'Devnet Bot: Offline';
+        if (haltBtn) {
+            haltBtn.textContent = 'Halt';
+            haltBtn.disabled = true;
+            haltBtn.className = 'bot-btn';
+        }
+        if (posPanel) posPanel.style.display = 'none';
+        return;
+    }
+
+    if (haltBtn) haltBtn.disabled = false;
+    if (balEl) balEl.textContent = '$' + fmt(botState.balance || 240, 2);
+    if (pnlEl) {
+        const pnl = botState.dailyPnL || 0;
+        pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + fmt(pnl, 2);
+        pnlEl.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    }
+    const openPositions = botState.positions || [];
+    const maxPos = botState.config?.MAX_POSITIONS || 3;
+    if (posCountEl) posCountEl.textContent = `${openPositions.length}/${maxPos}`;
+
+    if (botState.halted) {
+        if (badge) badge.className = 'bot-badge halted';
+        if (dot) dot.className = 'bot-dot pulse';
+        if (text) text.textContent = 'Devnet Bot: HALTED';
+        if (haltBtn) {
+            haltBtn.textContent = 'Resume';
+            haltBtn.className = 'bot-btn halted';
+        }
+    } else {
+        if (badge) badge.className = 'bot-badge online';
+        if (dot) dot.className = 'bot-dot pulse';
+        const port = getBotUrl().split(':').pop().replace(/[^0-9]/g, '') || '3001';
+        if (text) text.textContent = autoOn ? `Devnet Bot: Live (:${port})` : `Devnet Bot: Standby (:${port})`;
+        if (haltBtn) {
+            haltBtn.textContent = 'Halt';
+            haltBtn.className = 'bot-btn';
+        }
+    }
+
+    const tgCfg = getTelegramConfig();
+    const tgBtn = document.getElementById('tg-btn');
+    if (tgBtn) {
+        if (tgCfg.token && tgCfg.chatId) {
+            tgBtn.className = 'bot-btn active';
+            tgBtn.textContent = '✈️ TG: On';
+            tgBtn.title = `Telegram connected (Chat: ${tgCfg.chatId}). Click to test or edit.`;
+        } else {
+            tgBtn.className = 'bot-btn';
+            tgBtn.textContent = '✈️ TG: Set';
+            tgBtn.title = 'Telegram not configured. Click to enter Bot Token & Chat ID.';
+        }
+    }
+
+    if (openPositions.length > 0) {
+        if (posPanel) posPanel.style.display = 'block';
+        if (posTbody) {
+            posTbody.innerHTML = openPositions.map(p => {
+                const isLong = p.side === 'Long';
+                const sideCls = isLong ? 't-side-long' : 't-side-short';
+                const fillPrice = p.fillPrice || p.entryPrice;
+                return `<tr>
+                    <td><b>${p.asset}</b></td>
+                    <td class="${sideCls}"><b>${p.side}</b></td>
+                    <td><span class="at-outcome ${p.status === 'open' ? 'win' : 'open'}">${p.status.toUpperCase()}</span></td>
+                    <td>$${fmt(fillPrice, 2)}</td>
+                    <td>$${fmt(p.margin, 2)} (${p.leverage}x)</td>
+                    <td>+$${fmt(p.takeProfit - fillPrice, 2)}</td>
+                    <td>-$${fmt(fillPrice - p.stopLoss, 2)}</td>
+                    <td><button class="bot-close-btn" onclick="botClosePosition('${p.id}', null, 'Manual Close')">Close</button></td>
+                </tr>`;
+            }).join('');
+        }
+    } else {
+        if (posPanel) posPanel.style.display = 'none';
+    }
+}
+
+async function botClosePosition(positionId, exitPrice, closeReason='Manual') {
+    const botUrl = getBotUrl();
+    const curPrice = exitPrice || parseFloat(document.getElementById('price').textContent.replace(/[^0-9.]/g, '')) || 0;
+    try {
+        const res = await fetch(`${botUrl}/close`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ positionId, exitPrice: curPrice, closeReason })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('Position Closed', `Order closed on Jupiter Devnet @ $${fmt(curPrice, 2)}`);
+        }
+        pollBotState();
+    } catch (e) {
+        console.error('Failed to close position on bot:', e);
+    }
+}
+
+async function sendSignalToBot(signal, price, atrVal, entryPrice, entryOffset, sigObj) {
+    if (!isBotAutoTradeEnabled()) {
+        console.log('[BOT] Auto-trade toggle is OFF. Signal not dispatched.');
+        return;
+    }
+    const cfg = getAppConfig();
+    const botUrl = cfg.botUrl;
+    const payload = {
+        network: cfg.network,
+        rpcUrl: cfg.rpcUrl,
+        direction: signal,
+        price: price,
+        atr: atrVal,
+        confidenceScore: sigObj?.confirmScore ?? 3,
+        asset: currentAsset,
+        timeframe: currentTF,
+        reason: sigObj?.reason || (signal === 'green' ? 'reversal_hook' : 'standby'),
+        regime: sigObj?.regime || 'RANGE_BOUND_SUPPORT',
+        orderType: 'LIMIT_OR_MARKET',
+        ttlMinutes: 15,
+        entryOffset: entryOffset || 0.08,
+        tp1: sigObj?.tp1 || 0.35,
+        tp2: sigObj?.tp2 || (sigObj?.regime === 'RANGE_BOUND_SUPPORT' ? 0.55 : 0.75),
+        slCoeff: sigObj?.slCoeff || 1.5,
+        recommendedMargin: sigObj?.recommendedMargin || 120.00
+    };
+
+    try {
+        const res = await fetch(`${botUrl}/signal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        console.log('[BOT RELAY RESPONSE]', data);
+
+        if (data.status === 'placed') {
+            showToast('🤖 Devnet Bot: Order Placed', `${payload.asset} Limit Buy @ $${fmt(data.entryPrice, 2)} | Margin: $${fmt(data.margin, 2)} (${data.leverage}x)`);
+        } else if (data.status === 'skip' || data.status === 'halted') {
+            console.log('[BOT RELAY]', data.message);
+        }
+        pollBotState();
+    } catch (err) {
+        console.warn('[BOT RELAY] Could not reach server.js at', botUrl, err.message);
+    }
+}
+
+async function checkFisherAutoClose(curPrice) {
+    if (!isBotAutoTradeEnabled() || !botState || !botState.positions) return;
+    const matching = botState.positions.filter(p => p.asset === currentAsset && p.status === 'open');
+    if (matching.length === 0) return;
+    for (const pos of matching) {
+        try {
+            await botClosePosition(pos.id, curPrice, '5m Fisher Cross-Down');
+            showToast('🤖 Bot: 5m Fisher Early Exit', `Closed ${pos.asset} runner position @ $${fmt(curPrice, 2)}`);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+}
+
+function getSessionName() {
+    const hour = new Date().getUTCHours();
+    return (hour >= 13 && hour < 21) || (hour >= 0 && hour < 4) ? 'Session Active' : 'Off-hours';
+}
+
+function today() {
+    return new Date().toISOString().slice(0,10);
+}
+
+const fmt = (n,d=2) => n==null ? '-' : Number(n).toFixed(d);
+const fmtP = (n) => (n>=0?'+':'')+fmt(n,2);
+const fmtVol = (n) => n==null?'-':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':n.toFixed(0);
+
+/*
+Calculator (basic)
+*/
+let calcCur = '0', calcPrev = null, calcOpPending = null, calcReset = false;
+function calcRender() { document.getElementById('calc-display').textContent = calcCur; }
+function calcDigit(d) {
+    if (calcReset) { calcCur = d; calcReset = false; }
+    else { calcCur = (calcCur === '0') ? d : calcCur + d; }
+    calcRender();
+}
+function calcDot() {
+    if (calcReset) { calcCur = '0.'; calcReset = false; calcRender(); return; }
+    if(!calcCur.includes('.')) calcCur += '.';
+    calcRender();
+}
+function calcSign() { calcCur = (parseFloat(calcCur) * -1).toString(); calcRender(); }
+function calcPercent() { calcCur = (parseFloat(calcCur) / 100).toString(); calcRender(); }
+function calcClear() { calcCur='0'; calcPrev=null; calcOpPending=null; calcReset=false; calcRender(); }
+function calcOp(op){calcOpPending=op;calcPrev=parseFloat(calcCur);calcReset=true;}
+function calcEquals() {
+    if (calcOpPending == null || calcPrev == null) return;
+    const a = calcPrev, b = parseFloat(calcCur);
+    let r;
+    switch(calcOpPending) {
+        case '+': r=a+b; break;
+        case '-': r=a-b; break;
+        case '*': r=a*b; break;
+        case '/': r=b==0 ? NaN: a / b; break;
+        default: r=b;
+    }
+    calcCur = (Number.isFinite(r) ? +r.toFixed(8) : 'Error').toString();
+    calcPrev = null;
+    calcOpPending = null;
+    calcReset = true;
+    calcRender();
+}
+function showCalcTab(which) {
+    document.getElementById('tab-basic').classList.toggle('active', which==='basic');
+    document.getElementById('tab-compound').classList.toggle('active', which==='compound');
+    document.getElementById('tab-backtest').classList.toggle('active', which==='backtest');
+    document.getElementById('calc-basic-panel').style.display = which==='basic' ? 'flex' : 'none';
+    document.getElementById('calc-compound-panel').style.display = which==='compound' ? 'flex' : 'none';
+    document.getElementById('calc-backtest-panel').style.display = which==='backtest' ? 'flex' : 'none';
+}
+
+/*
+Compounding calculator - Dynamic Split & Multi-Iteration Engine
+*/
+function onCompoundModeChange() {
+    const mode = document.getElementById('c-mode') ? document.getElementById('c-mode').value : '0.5';
+    const customInput = document.getElementById('c-custom-alloc');
+    if (customInput) {
+        customInput.style.display = mode === 'custom' ? 'inline-block' : 'none';
+    }
+    const thTrade = document.getElementById('compound-th-trade');
+    if (thTrade) {
+        if (mode === '0.5') thTrade.textContent = 'Half Traded (50%)';
+        else if (mode === '1.0') thTrade.textContent = 'Traded (100%)';
+        else thTrade.textContent = 'Traded Portion';
+    }
+    runCompound();
+}
+
+function updateMaxIters() {
+    let maxIters = parseInt(document.getElementById('c-max-iters').value) || 100;
+    maxIters = Math.max(1, Math.min(1000, maxIters));
+    document.getElementById('c-max-iters').value = maxIters;
+    const itersEl = document.getElementById('c-iters');
+    if (itersEl) {
+        itersEl.max = maxIters;
+        if (parseInt(itersEl.value) > maxIters) {
+            itersEl.value = maxIters;
+        }
+    }
+}
+
+function validateIters() {
+    let maxIters = parseInt(document.getElementById('c-max-iters').value) || 100;
+    maxIters = Math.max(1, Math.min(1000, maxIters));
+    const itersEl = document.getElementById('c-iters');
+    if (itersEl) {
+        let iters = parseInt(itersEl.value) || 10;
+        iters = Math.max(1, Math.min(maxIters, iters));
+        itersEl.value = iters;
+        itersEl.max = maxIters;
+    }
+}
+
+function setQuickIters(n) {
+    const maxItersEl = document.getElementById('c-max-iters');
+    if (maxItersEl) {
+        let curMax = parseInt(maxItersEl.value) || 100;
+        if (n > curMax) {
+            maxItersEl.value = n;
+            updateMaxIters();
+        }
+    }
+    const itersEl = document.getElementById('c-iters');
+    if (itersEl) {
+        itersEl.value = n;
+        validateIters();
+    }
+    runCompound();
+}
+
+function runCompound() {
+    const principal = parseFloat(document.getElementById('c-principal').value) || 0;
+    const rate = parseFloat(document.getElementById('c-rate').value) || 0;
+    const fee = parseFloat(document.getElementById('c-fee').value) || 0;
+
+    let maxIters = parseInt(document.getElementById('c-max-iters').value) || 100;
+    maxIters = Math.max(1, Math.min(1000, maxIters));
+    document.getElementById('c-max-iters').value = maxIters;
+
+    const itersEl = document.getElementById('c-iters');
+    let iters = parseInt(itersEl.value) || 10;
+    iters = Math.max(1, Math.min(maxIters, iters));
+    itersEl.value = iters;
+    itersEl.max = maxIters;
+
+    const mode = document.getElementById('c-mode') ? document.getElementById('c-mode').value : '0.5';
+    let allocRatio = 0.5; // Default: half of starting balance
+    if (mode === '1.0') {
+        allocRatio = 1.0;
+    } else if (mode === 'custom') {
+        const customAlloc = parseFloat(document.getElementById('c-custom-alloc').value) || 50;
+        allocRatio = Math.max(0.01, Math.min(1.0, customAlloc / 100));
+    }
+
+    const netRate = (rate - fee) / 100;
+    let balance = principal;
+    const rows = [];
+
+    for (let i = 1; i <= iters; i++) {
+        const startBal = balance;
+        // Dynamic cycle: take half (or allocated ratio) of current starting balance
+        const tradeAmount = startBal * allocRatio;
+        const reserve = startBal - tradeAmount;
+        // That portion is compounded at netRate
+        const profit = tradeAmount * netRate;
+        const compoundedTrade = tradeAmount + profit;
+        // Readded to reserve to make the new starting balance for next cycle
+        const newBal = reserve + compoundedTrade;
+
+        rows.push({
+            n: i,
+            startBal: startBal,
+            tradeAmount: tradeAmount,
+            profit: profit,
+            newBal: newBal
+        });
+
+        // The cycle continues with the newly compounded balance
+        balance = newBal;
+    }
+
+    const tbody = document.getElementById('compound-tbody');
+    tbody.innerHTML = rows.map(r =>
+        `<tr>
+            <td>${r.n}</td>
+            <td>$${fmt(r.startBal, 2)}</td>
+            <td>$${fmt(r.tradeAmount, 2)}</td>
+            <td style="color:${r.profit >= 0 ? 'var(--green)' : 'var(--red)'}">${r.profit >= 0 ? '+' : ''}$${fmt(r.profit, 2)}</td>
+            <td>$${fmt(r.newBal, 2)}</td>
+        </tr>`
+    ).join('');
+
+    const totalGain = balance - principal;
+    const pctReturn = principal !== 0 ? (totalGain / principal) * 100 : 0;
+    const nextHalf = balance * allocRatio;
+
+    document.getElementById('cs-final').textContent = '$' + fmt(balance, 2);
+    document.getElementById('cs-gain').textContent = (totalGain >= 0 ? '+' : '') + '$' + fmt(totalGain, 2);
+    document.getElementById('cs-pct').textContent = fmtP(pctReturn) + '%';
+    const nextHalfEl = document.getElementById('cs-next-half');
+    if (nextHalfEl) {
+        nextHalfEl.textContent = '$' + fmt(nextHalf, 2);
+    }
+    document.getElementById('compound-summary').style.display = 'flex';
+    document.getElementById('compound-table-wrap').style.display = 'block';
+}
+
+/*
+Dual-Timeframe Strategy Backtester Engine (Optimized DB Settings)
+*/
+async function runLiveBacktest() {
+    const btn = document.getElementById('run-backtest-btn');
+    const oldText = btn.textContent;
+    btn.textContent = 'Running...';
+    btn.disabled = true;
+    
+    try {
+        const [raw_15m, raw_1h, raw_5m] = await Promise.all([
+            fetchKlines(currentSymbol, '15m', 400),
+            fetchKlines(currentSymbol, '1h', 150),
+            fetchKlines(currentSymbol, '5m', 500).catch(() => [])
+        ]);
+
+        // Precompute 5m Fisher Transform & Signal Line for accurate runner early exit
+        const f5m_highs = raw_5m.map(k => parseFloat(k[2]));
+        const f5m_lows = raw_5m.map(k => parseFloat(k[3]));
+        const f5m_closes = raw_5m.map(k => parseFloat(k[4]));
+        const f5m_times = raw_5m.map(k => k[0]);
+
+        const f5m_fisher = calcFisher(f5m_highs, f5m_lows, 9);
+        const f5m_sig = calcFisherSignal(f5m_fisher);
+
+        const fisher5m_cross_down = {};
+        for (let m = 2; m < raw_5m.length; m++) {
+            if (f5m_fisher[m] != null && f5m_sig[m] != null && f5m_fisher[m-1] != null && f5m_sig[m-1] != null) {
+                if (f5m_fisher[m] < f5m_sig[m] && f5m_fisher[m-1] >= f5m_sig[m-1]) {
+                    fisher5m_cross_down[f5m_times[m]] = f5m_closes[m];
+                }
+            }
+        }
+        
+        const hH = raw_1h.map(k => parseFloat(k[2]));
+        const hL = raw_1h.map(k => parseFloat(k[3]));
+        const hC = raw_1h.map(k => parseFloat(k[4]));
+        const hV = raw_1h.map(k => parseFloat(k[5]));
+        const hT = raw_1h.map(k => k[0]);
+        
+        const htf_map = {};
+        for (let i = 50; i < raw_1h.length - 1; i++) {
+            const hH_sub = hH.slice(0, i+1);
+            const hL_sub = hL.slice(0, i+1);
+            const hC_sub = hC.slice(0, i+1);
+            const hV_sub = hV.slice(0, i+1);
+            htf_map[hT[i]] = calcHTFSignal(hH_sub, hL_sub, hC_sub, hV_sub);
+        }
+        
+        const opens = raw_15m.map(k => parseFloat(k[1]));
+        const highs = raw_15m.map(k => parseFloat(k[2]));
+        const lows = raw_15m.map(k => parseFloat(k[3]));
+        const closes = raw_15m.map(k => parseFloat(k[4]));
+        const volumes = raw_15m.map(k => parseFloat(k[5]));
+        const times = raw_15m.map(k => k[0]);
+        
+        const cci = calcCCI(highs, lows, closes, 20);
+        const fisher = calcFisher(highs, lows, 9);
+        const vwma = calcVWMA(closes, volumes, 20);
+        const atr = calcATR(highs, lows, closes, 14);
+        const adx = calcADX(highs, lows, closes, 14);
+        
+        let balance = 240.00;
+        let trades_logged = [];
+        let consec_green = 0;
+        let cooldown = 0;
+        
+        for (let i = 50; i < raw_15m.length - 2; i++) {
+            if (cooldown > 0) cooldown--;
+            
+            const price = closes[i];
+            const cur_vwma = vwma[i];
+            const cur_atr = atr[i] || 0.35;
+            const cur_adx = adx[i];
+            
+            if (cur_vwma == null || cur_adx == null) continue;
+            
+            const hr_floor = Math.floor(times[i] / 3600000) * 3600000;
+            const htfSignal = htf_map[hr_floor] || 'red';
+            
+            let regime = "RANGE_BOUND_SUPPORT";
+            
+            const isChop = cur_adx < 20 || (cur_vwma != null && Math.abs(price - cur_vwma) / cur_vwma < 0.003);
+            const isFlashCrash = htfSignal === 'red' && price < cur_vwma && cur_adx > 35;
+            const isBullDrift = htfSignal === 'green' && price > cur_vwma && cur_adx > 45;
+
+            if (isFlashCrash) {
+                regime = "FLASH_CRASH";
+            } else if (isChop) {
+                regime = "MARKET_CHOP";
+            } else if (isBullDrift) {
+                regime = "BULL_TREND_DRIFT";
+            } else {
+                regime = "RANGE_BOUND_SUPPORT";
+            }
+
+            // Dynamic Pullback Limit Entries: 0.25x-0.30x ATR
+            const entryOffset = regime === "RANGE_BOUND_SUPPORT"
+                ? Math.max(0.08, Math.min(cur_atr * 0.30, 0.22))
+                : Math.max(0.05, Math.min(cur_atr * 0.25, 0.20));
+
+            let tp1 = 0.35;
+            let tp2 = regime === "BULL_TREND_DRIFT" ? 1.10 : (regime === "RANGE_BOUND_SUPPORT" ? 0.55 : 0.75);
+            let slCoeff = 1.5;
+            let size_pct = 0.50; // 50% compounding
+
+            if (regime === "FLASH_CRASH" || regime === "MARKET_CHOP") {
+                size_pct = 0.00; // 100% Cash Standby Symmetrical Sit-out
+            }
+
+            let rawSignal = 'yellow';
+            if (regime !== "MARKET_CHOP" && regime !== "FLASH_CRASH") {
+                const cciBullish = cci[i] > cci[i-1];
+                const fishBullish = fisher[i] > fisher[i-1];
+                const isBullCandle = closes[i] > opens[i] || ((Math.min(opens[i], closes[i]) - lows[i]) >= 1.2 * Math.max(0.01, Math.abs(closes[i] - opens[i])));
+
+                if (cciBullish && fishBullish && isBullCandle) {
+                    rawSignal = 'green';
+                }
+            }
+
+            if (rawSignal === 'green') {
+                consec_green++;
+            } else {
+                consec_green = 0;
+            }
+            
+            if (cooldown > 0 && rawSignal === 'green') {
+                rawSignal = 'yellow';
+            }
+            
+            // Execute trade
+            if (rawSignal === 'green' && size_pct > 0) {
+                const entry_trigger_price = closes[i];
+                const entry_target = entry_trigger_price - entryOffset;
+                const filled = lows[i+1] <= entry_target;
+                
+                if (filled) {
+                    const isLSD = balance < 22.00;
+                    const leverage = isLSD ? 20 : 50; // Calibrated 50x leverage
+                    const backtest_sl = isLSD ? 0.30 : (slCoeff * cur_atr);
+                    const backtest_tp1 = isLSD ? 0.15 : tp1;
+                    const margin = isLSD ? 11.00 : (balance * size_pct);
+                    
+                    if (balance < 10.00) break; // Jupiter lockout
+                    
+                    const position_size_usd = margin * leverage;
+                    const token_count = position_size_usd / entry_target;
+                    
+                    let exited = false;
+                    let tp1_hit = false;
+                    let pnl = 0;
+                    let exit_price = 0;
+                    let exit_type = "";
+                    
+                    const tp1_target = entry_target + backtest_tp1;
+                    const tp2_target = entry_target + tp2;
+                    const sl_target = entry_target - backtest_sl;
+                    
+                    for (let j = i + 1; j < raw_15m.length - 1; j++) {
+                        const low = lows[j];
+                        const high = highs[j];
+                        
+                        if (!tp1_hit) {
+                            if (low <= sl_target) {
+                                exit_price = sl_target;
+                                pnl = (sl_target - entry_target) * token_count - (position_size_usd * 0.0008);
+                                exit_type = "Loss";
+                                exited = true;
+                                cooldown = 2;
+                                break;
+                            }
+                            if (high >= tp1_target) {
+                                tp1_hit = true;
+                                pnl += (tp1_target - entry_target) * (token_count / 2) - (position_size_usd / 2 * 0.0008);
+                            }
+                        } else {
+                            // Multi-interval 5m Fisher cross-down detection within 15m candle j:
+                            const t0 = times[j];
+                            const t1 = t0 + 300000;
+                            const t2 = t0 + 600000;
+                            let isFisherCrossDown = false;
+                            let fisherExitPrice = closes[j];
+
+                            if (fisher5m_cross_down[t0] !== undefined) {
+                                isFisherCrossDown = true;
+                                fisherExitPrice = fisher5m_cross_down[t0];
+                            } else if (fisher5m_cross_down[t1] !== undefined) {
+                                isFisherCrossDown = true;
+                                fisherExitPrice = fisher5m_cross_down[t1];
+                            } else if (fisher5m_cross_down[t2] !== undefined) {
+                                isFisherCrossDown = true;
+                                fisherExitPrice = fisher5m_cross_down[t2];
+                            } else if (fisher[j] != null && fisher[j - 1] != null && fisher[j] < fisher[j - 1]) {
+                                isFisherCrossDown = true;
+                                fisherExitPrice = closes[j];
+                            }
+
+                            const runnerFloorPrice = regime === "RANGE_BOUND_SUPPORT" ? (entry_target + 0.15) : entry_target;
+
+                            if (high >= tp2_target) {
+                                exit_price = tp2_target;
+                                pnl += (tp2_target - entry_target) * (token_count / 2) - (position_size_usd / 2 * 0.0008);
+                                exit_type = "Full TP";
+                                exited = true;
+                                break;
+                            } else if (isFisherCrossDown && fisherExitPrice > runnerFloorPrice) {
+                                // 5m Fisher early exit: locks in runner gains before rolling back
+                                exit_price = fisherExitPrice;
+                                pnl += (fisherExitPrice - entry_target) * (token_count / 2) - (position_size_usd / 2 * 0.0008);
+                                exit_type = "Half TP/Fisher";
+                                exited = true;
+                                break;
+                            } else if (low <= runnerFloorPrice) {
+                                exit_price = runnerFloorPrice;
+                                pnl += (runnerFloorPrice - entry_target) * (token_count / 2) - (position_size_usd / 2 * 0.0008);
+                                exit_type = "Half TP/BE";
+                                exited = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (exited) {
+                        balance += pnl;
+                        trades_logged.push({
+                            n: trades_logged.length + 1,
+                            type: exit_type,
+                            entry: entry_target,
+                            exit: exit_price,
+                            margin: margin,
+                            pnl: pnl,
+                            balance: balance
+                        });
+                        i = i + 3;
+                    }
+                }
+            }
+        }
+        
+        if (trades_logged.length === 0) {
+            document.getElementById('backtest-summary').style.display = 'none';
+            document.getElementById('backtest-table-wrap').style.display = 'none';
+            alert('No signals filled during this period.');
+        } else {
+            const wins = trades_logged.filter(t => t.pnl > 0).length;
+            const winrate = (wins / trades_logged.length) * 100;
+            const total_pnl = balance - 240.00;
+            const net_gain_pct = (total_pnl / 240.00) * 100;
+            
+            document.getElementById('bt-final').textContent = '$' + fmt(balance, 2);
+            document.getElementById('bt-winrate').textContent = fmt(winrate, 1) + '%';
+            document.getElementById('bt-total-trades').textContent = trades_logged.length;
+            document.getElementById('bt-pnl').textContent = (total_pnl >= 0 ? '+' : '') + '$' + fmt(total_pnl, 2);
+            document.getElementById('bt-gain').textContent = fmtP(net_gain_pct) + '%';
+            
+            const tbody = document.getElementById('backtest-tbody');
+            tbody.innerHTML = trades_logged.map(t => {
+                const pnlcls = t.pnl >= 0 ? 'pos' : 'neg';
+                return `<tr>
+                    <td style="text-align:left; padding:4px 8px;">${t.n}</td>
+                    <td style="text-align:right; padding:4px 8px;">${t.type}</td>
+                    <td style="text-align:right; padding:4px 8px;">$${fmt(t.entry, 2)}</td>
+                    <td style="text-align:right; padding:4px 8px;">$${fmt(t.exit, 2)}</td>
+                    <td style="text-align:right; padding:4px 8px;">$${fmt(t.margin, 2)}</td>
+                    <td style="text-align:right; padding:4px 8px;" class="t-pnl ${pnlcls}">${t.pnl >= 0 ? '+' : ''}$${fmt(t.pnl, 2)}</td>
+                    <td style="text-align:right; padding:4px 8px;"><b>$${fmt(t.balance, 2)}</b></td>
+                </tr>`;
+            }).join('');
+            
+            document.getElementById('backtest-summary').style.display = 'flex';
+            document.getElementById('backtest-table-wrap').style.display = 'block';
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Backtest run error: ' + e.message);
+    } finally {
+        btn.textContent = oldText;
+        btn.disabled = false;
+    }
+}
+
+function selectAsset(btn, symbol, asset) {
+    lastSignal = null; lastSignalKey = null;
+    document.querySelectorAll('#asset-group .pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentSymbol = symbol;
+    currentAsset = asset;
+    document.getElementById('t-asset').value = asset;
+    load();
+}
+function selectTF(btn, tf) {
+    document.querySelectorAll('#tf-group .pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTF = tf;
+    document.getElementById('tf-label').textContent = tf;
+    load();
+}
+function selectStrategy(btn, mode) {
+    document.querySelectorAll('#strategy-group .pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentStrategyMode = mode;
+    load();
+}
+
+function calcCCI(highs, lows, closes, period=20) {
+    return closes.map((_,i) => {
+        if (i<period-1) return null;
+        const h=highs.slice(i-period+1,i+1), l=lows.slice(i-period+1,i+1), c=closes.slice(i-period+1,i+1);
+        const tp=c.map((_,j)=>(h[j]+l[j]+c[j])/3);
+        const sma=tp.reduce((a,b)=>a+b,0)/period;
+        const mad=tp.map(v=>Math.abs(v-sma)).reduce((a,b)=>a+b,0)/period;
+        return mad===0?0:(tp[tp.length-1]-sma)/(0.015*mad);
+    });
+}
+
+function calcFisher(highs, lows, period=9) {
+    let prev = 0;
+    return highs.map((_,i) => {
+        if (i<period-1) return null;
+        const hi=Math.max(...highs.slice(i-period+1,i+1));
+        const lo=Math.min(...lows.slice(i-period+1,i+1));
+        let r=(highs[i]+lows[i])/2;
+        r=hi===lo?0.5:(r-lo)/(hi-lo);
+        r=Math.min(Math.max(r,0.001),0.999);
+        const f=0.5*Math.log((1+r)/(1-r))*2+0.5*prev;
+        prev=f;
+        return parseFloat(f.toFixed(4));
+    });
+}
+
+function calcFisherSignal(arr) { 
+    return arr.map((v,i)=>i===0?null:arr[i-1]); 
+}
+
+function calcTenkan(highs, lows, period=9) {
+    return highs.map((_,i) => {
+        if(i<period-1) return null;
+        return (Math.max(...highs.slice(i-period+1,i+1))+Math.min(...lows.slice(i-period+1,i+1)))/2;
+    });
+}
+
+function calcVWMA(closes, volumes, period=20) {
+    return closes.map((_,i) => {
+        if (i<period-1) return null;
+        const c=closes.slice(i-period+1,i+1);
+        const v=volumes.slice(i-period+1,i+1);
+        const den=v.reduce((a,b)=>a+b,0);
+        return den===0?null:c.reduce((a,b,j)=>a+b*v[j],0)/den;
+    });
+}
+
+function calcSMA(closes, period=50) {
+    return closes.map((_,i) => {
+        if (i<period-1) return null;
+        return closes.slice(i-period+1,i+1).reduce((a,b)=>a+b,0)/period;
+    });
+}
+
+function isRising(arr) { 
+    const v=arr.filter(x=>x!=null); 
+    return v.length>=2&&v[v.length-1]>v[v.length-2]; 
+}
+
+function lastVal(arr) { 
+    const val = arr.filter(x=>x!=null).slice(-1);
+    return val.length > 0 ? val[0] : null;
+}
+
+function isAboveZero(arr) { 
+    const v=arr.filter(x=>x!=null); 
+    return v.length>=1&&v[v.length-1]>0; 
+}
+
+function isVolumeConfirmed(volumes) {
+    if (volumes.length<20) return false;
+    const avg=volumes.slice(-21,-1).reduce((a,b)=>a+b,0)/20;
+    return volumes[volumes.length-1]>avg;
+}
+
+function calcATR(highs, lows, closes, period=14) {
+    const tr=closes.map((_,i) => {
+        if(i===0) return highs[i]-lows[i];
+        return Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1]));
+    });
+    return tr.map((_,i) => {
+        if (i<period-1) return null;
+        return tr.slice(i-period+1,i+1).reduce((a,b)=>a+b,0)/period;
+    });
+}
+
+function isATRExpanding(atrArr) {
+    const v=atrArr.filter(x=>x!=null);
+    return v.length>=3 && v[v.length-1]>v[v.length-3];
+}
+
+function calcADX(highs, lows, closes, period=14) {
+    if (highs.length<period+1) return [];
+    const dmPlus = [], dmMinus = [], trArr = [];
+    for(let i=1;i<highs.length;i++) {
+        const upMove=highs[i]-highs[i-1];
+        const dnMove=lows[i-1]-lows[i];
+        dmPlus.push(upMove>dnMove&&upMove>0?upMove:0);
+        dmMinus.push(dnMove>upMove&&dnMove>0?dnMove:0);
+        trArr.push(Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1])));
+    }
+
+    const smooth=(arr,p) => {
+        let s=arr.slice(0,p).reduce((a,b)=>a+b,0);
+        const out=[s];
+        for (let i=p;i<arr.length;i++){s=s-s/p+arr[i]; out.push(s);}
+        return out;
+    };
+
+    const sTR=smooth(trArr, period), sDMp=smooth(dmPlus,period), sDMm=smooth(dmMinus,period);
+    const diPlus=sDMp.map((v,i)=>sTR[i]?100*v/sTR[i]:0);
+    const diMinus=sDMm.map((v,i)=>sTR[i]?100*v/sTR[i]:0);
+    const dx=diPlus.map((v,i)=>{
+        const s=v+diMinus[i]; 
+        return s?100*Math.abs(v-diMinus[i])/s:0;
+    });
+
+    const adxRaw=smooth(dx,period);
+    // Properly normalize Wilder ADX by dividing cumulative sum by period (0-100 scale)
+    const adxScaled=adxRaw.map(v => Math.min(100, Math.max(0, v / period)));
+    const pad = highs.length-adxScaled.length;
+    return Array(pad).fill(null).concat(adxScaled);
+}
+
+function isFisherCrossUp(fisher, fisherSig) {
+    const n=fisher.length;
+    if (n<2) return false;
+    const f=fisher.filter(x=>x!=null), s=fisherSig.filter(x=>x!=null);
+    if (f.length<2||s.length<2) return false;
+    return f[f.length-1]>s[s.length-1] && f[f.length-2]<=s[s.length-2];
+}
+
+function isGoodSession() {
+    const h=new Date().getUTCHours();
+    return (h>=13&&h<21) || (h>=0&&h<4);
+}
+
+function isBullishCandle(opens, closes, highs, lows) {
+    if (opens.length < 2) return false;
+    const i = opens.length - 2;
+    const op = opens[i];
+    const cl = closes[i];
+    if (cl > op) return true; // Standard green candle close
+
+    // Absorption pin-bar / hammer support:
+    // Even if close <= open, if the lower wick is at least 1.2x candle body with 15¢+ depth,
+    // strong buyer absorption is confirmed at support.
+    if (highs && lows && highs.length > i && lows.length > i) {
+        const lo = lows[i];
+        const body = Math.max(0.01, Math.abs(cl - op));
+        const lowerWick = Math.min(op, cl) - lo;
+        if (lowerWick >= 1.2 * body && lowerWick >= 0.15) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function detectDivergence(prices, indicator, lookback=5) {
+    const p = prices.slice(-lookback).filter(x=>x!=null);
+    const ind = indicator.slice(-lookback).filter(x=>x!=null);
+    if (p.length < lookback || ind.length < lookback) return 'none';
+    const priceHH = p[p.length-1] > Math.max(...p.slice(0,-1));
+    const priceLL = p[p.length-1] < Math.min(...p.slice(0,-1));
+    const indHH = ind[ind.length-1] > Math.max(...ind.slice(0,-1));
+    const indLL = ind[ind.length-1] < Math.min(...ind.slice(0,-1));
+
+    if (priceHH && !indHH) return 'bearish';
+    if (priceLL && !indLL) return 'bullish';
+    return 'none';
+}
+
+function isMomentumAccelerating(arr) {
+    const v = arr.filter(x=>x!=null);
+    if(v.length < 3) return false;
+    const d1 = v[v.length-1] - v[v.length-2];
+    const d2 = v[v.length-2] - v[v.length-3];
+    return d1 > d2;
+}
+
+function applyCooldown(signal, barTimestamp, cooldownRequired=2) {
+    if (signal === 'red') {
+        cooldownBars = cooldownRequired;
+        lastRedBar = barTimestamp;
+        return 'red';
+    }
+    if (cooldownBars > 0) {
+        cooldownBars--;
+        if (signal === 'green') return 'yellow'; 
+    }
+    return signal;
+}
+
+/*
+CALIBRATED SIGNAL CALCULATION (INCORPORATING 5 DB CHANGES)
+*/
+function calcSignal(cciArr, cciUp, fishArr, fishUp, tenkUp, price, vwma, sma50,
+                    volConfirmed, atrExpanding, adxTrending,
+                    fisherCrossUp, htfSignal,
+                    bullishCandle, cciDiv, fishDiv, cciAccel, barTimestamp, curADX, curATR) {
+    
+    if (vwma==null) return {signal:'yellow', reason: 'vwma null'};
+
+    // 1. Dynamic Regime Detection (Bit-for-bit synchronized with mini-sol-dashboard.onrender.com)
+    let regime = "RANGE_BOUND_SUPPORT";
+    const actualADX = curADX !== undefined && curADX !== null ? curADX : 30;
+    const currentATR = curATR || 0.35;
+
+    if (htfSignal === 'red' && price < vwma && actualADX > 35) {
+        regime = "FLASH_CRASH";
+    } else if (actualADX < 20) {
+        regime = "MARKET_CHOP";
+    } else if (htfSignal === 'green' && price > vwma && actualADX > 45) {
+        regime = "BULL_TREND_DRIFT";
+    } else {
+        regime = "RANGE_BOUND_SUPPORT";
+    }
+
+    // 2. Calibrated Limit Entry: Close - 8¢ (or Market execution with 15m TTL)
+    let entryOffset = 0.08;
+    
+    // 3. Fee-Neutral TP1 widened to 0.35 (+3.5% to +4.5% net margin yield)
+    let tp1 = 0.35;
+    let tp2 = regime === "BULL_TREND_DRIFT" ? 1.10 : (regime === "RANGE_BOUND_SUPPORT" ? 0.55 : 0.75);
+    
+    // 4. Base Stop Loss tightened to 1.5x ATR (cuts max drawdown by ~15%)
+    let slCoeff = 1.5;
+    
+    // 5. Compounding Sizing recommendation for $240 base ($120 = 50% margin)
+    let recommendedMargin = 120.00;
+
+    if (regime === "FLASH_CRASH" || regime === "MARKET_CHOP") {
+        recommendedMargin = 0.00;
+        slCoeff = 1.5;
+    } else if (regime === "RANGE_BOUND_SUPPORT") {
+        tp2 = 0.55;
+        recommendedMargin = 120.00;
+    } else if (regime === "BULL_TREND_DRIFT") {
+        tp2 = 1.10;
+        recommendedMargin = 120.00;
+    }
+
+    const cciBullish = cciUp; 
+    const fishBullish = fishUp;
+    const isBullishClose = bullishCandle;
+
+    const bullDiv = cciDiv==='bullish' || fishDiv==='bullish';
+
+    let isLongTrigger = false;
+    let reason = 'insufficient_alignment';
+
+    // Symmetrical Sit-Out enforcement: Take ZERO trades in Chop (ADX < 20) or Flash Crash (ADX > 35 + Red HTF)
+    if (regime !== "MARKET_CHOP" && regime !== "FLASH_CRASH") {
+        // Triggers as soon as CCI & Fisher hook up together with candle / pin-bar confirmation
+        if (cciBullish && fishBullish && isBullishClose) {
+            isLongTrigger = true;
+            reason = bullDiv ? 'bullish_divergence_reversal' : 'reversal_hook_long';
+        }
+    }
+
+    let rawSignal = 'yellow';
+    if (isLongTrigger) {
+        rawSignal = 'green';
+    } else if (regime === 'FLASH_CRASH') {
+        rawSignal = 'red';
+        reason = 'flash_crash_sitout';
+    } else {
+        rawSignal = 'yellow';
+        if (regime === 'MARKET_CHOP') {
+            reason = 'consolidating';
+        } else {
+            reason = 'insufficient_alignment';
+        }
+    }
+
+    const finalSignal = applyCooldown(rawSignal, barTimestamp);
+    const confirmScore = [volConfirmed, atrExpanding, adxTrending, isGoodSession(), cciAccel].filter(Boolean).length;
+
+    return {
+        signal: finalSignal,
+        reason,
+        confirmScore,
+        bullDiv,
+        bullishCandle,
+        cciAccel,
+        regime,
+        tp1,
+        tp2,
+        slCoeff,
+        entryOffset,
+        recommendedMargin
+    };
+}
+
+function calcHTFSignal(highs, lows, closes, volumes) {
+    if(closes.length < 52) return 'red';
+    const H=highs.slice(0,-1), L=lows.slice(0,-1), C=closes.slice(0,-1), V=volumes.slice(0,-1);
+    const cci = calcCCI(H,L,C,20);
+    const fisher = calcFisher(H,L,9);
+    const tenkan = calcTenkan(H,L,9);
+    const vwma = calcVWMA(C,V,20);
+    const sma50 = calcSMA(C,50);
+    const price = C[C.length-1];
+    const curV = lastVal(vwma);
+
+    if (curV==null||price<curV) return 'red';
+    const dist=Math.abs((price-curV)/curV);
+    if (dist<=0.003) return 'yellow';
+
+    const cciUp=isRising(cci), fishUp=isRising(fisher), tenkUp=isRising(tenkan);
+    const aboveSMA = sma50!=null?price>lastVal(sma50): true;
+    const cciBull = cciUp&&isAboveZero(cci);
+    const fishBull = fishUp&&isAboveZero(fisher);
+    const aligned = [cciBull, fishBull, tenkUp].filter(Boolean).length;
+
+    if (aligned===3&&aboveSMA) return 'green';
+    if (aligned>=2&&aboveSMA) return 'yellow';
+    return 'red';
+}
+
+function setInd(vId, ald, val, rising) {
+    document.getElementById(vId).textContent=fmt(val,3);
+    const el=document.getElementById(ald);
+    el.textContent=rising?'Rising': 'Falling / Flat';
+    el.className='ind-arrow '+(rising?'arr-up':'arr-dn');
+}
+
+function setVWMA(vwma, price) {
+    document.getElementById('vwma-val').textContent='$'+fmt(vwma,2);
+    if (vwma==null) {
+        document.getElementById('vwma-dist').textContent='-'; 
+        document.getElementById('vwma-arr').textContent='-';
+        return;
+    }
+    const d=((price-vwma)/vwma)*100;
+    document.getElementById('vwma-dist').textContent=(d>=0?'+':'')+fmt(d,2)+'% vs price';
+    const el=document.getElementById('vwma-arr');
+    if (d>=10){el.textContent='Breakout +10%'; el.className='ind-arrow arr-up';}
+    else if (d>=0&&d<0.3) {el.textContent='Consolidating';el.className='ind-arrow arr-yellow';}
+    else if (d>=0.3){el.textContent='Above VWMA';el.className='ind-arrow arr-up';}
+    else {el.textContent='Below VWMA';el.className='ind-arrow arr-dn';}
+}
+
+function applySignal(sigObj, cciArr, cciUp, fishArr, fishUp, tenkUp, price, vwma, sma50, volOK, atrOK, adxOK, crossUp) {
+    const {signal, reason} = sigObj;
+    const sig=document.getElementById('big-signal'), lbl=document.getElementById('sig-label'), sub=document.getElementById('sig-sub');
+    
+    if (sig) sig.className='big-signal '+signal; 
+    if (lbl) lbl.className='sig-label '+signal;
+
+    const htfGaugeVal = document.getElementById('confidence-val');
+    const htfGaugeSub = document.getElementById('confidence-sub');
+    
+    if (htfGaugeVal && htfGaugeSub) {
+        if (typeof htfSignalGlobal !== 'undefined') {
+            const htf = htfSignalGlobal;
+            if (htf === 'green') {
+                htfGaugeVal.textContent = 'HIGH CONFIDENCE';
+                htfGaugeVal.style.color = 'var(--green)';
+                htfGaugeSub.textContent = '1H HTF is Bullish (Aligned)';
+            } else if (htf === 'yellow') {
+                htfGaugeVal.textContent = 'MEDIUM CONFIDENCE';
+                htfGaugeVal.style.color = 'var(--yellow)';
+                htfGaugeSub.textContent = '1H HTF is Neutral (Consolidating)';
+            } else {
+                htfGaugeVal.textContent = 'LOW CONFIDENCE';
+                htfGaugeVal.style.color = 'var(--red)';
+                htfGaugeSub.textContent = '1H HTF is Bearish (Opposing)';
+            }
+        }
+    }
+
+    const regimeEl = document.getElementById('regime-text');
+    const regimeBlock = document.getElementById('regime-block');
+    if (regimeEl && regimeBlock) {
+        regimeEl.textContent = sigObj.regime.replace(/_/g, ' ');
+        if (sigObj.regime === 'FLASH_CRASH') {
+            regimeEl.style.color = 'var(--red)';
+            regimeBlock.style.borderColor = 'var(--red)';
+            regimeBlock.style.background = 'rgba(239,68,68,0.1)';
+        } else if (sigObj.regime === 'MARKET_CHOP') {
+            regimeEl.style.color = 'var(--yellow)';
+            regimeBlock.style.borderColor = 'var(--yellow)';
+            regimeBlock.style.background = 'rgba(245,158,11,0.1)';
+        } else if (sigObj.regime === 'BULL_TREND_DRIFT') {
+            regimeEl.style.color = 'var(--green)';
+            regimeBlock.style.borderColor = 'var(--green)';
+            regimeBlock.style.background = 'rgba(34,197,94,0.1)';
+        } else {
+            regimeEl.style.color = 'var(--blue)';
+            regimeBlock.style.borderColor = 'var(--blue)';
+            regimeBlock.style.background = 'rgba(59,130,246,0.1)';
+        }
+    }
+
+    const entryOffset = sigObj.entryOffset;
+    const tp1 = sigObj.tp1;
+    const tp2 = sigObj.tp2;
+    const slCoeff = sigObj.slCoeff;
+    const marginSizeStr = sigObj.recommendedMargin > 0 ? `$${sigObj.recommendedMargin} Margin Size` : 'STANDBY (100% Cash)';
+
+    if (lbl && sub) {
+        if (signal === 'green') {
+            let labelText = '🟩 REVERSAL HOOK LONG';
+            if (reason === 'bullish_divergence_reversal') {
+                labelText = '🟩 BULLISH DIVERGENCE LONG';
+            }
+            lbl.textContent = labelText;
+            
+            const recommends = `Active Regime: ${sigObj.regime.replace(/_/g, ' ')} · Sizing: ${marginSizeStr}`;
+            const runnerFloorNote = sigObj.regime === 'RANGE_BOUND_SUPPORT' ? ' (+15¢ Runner Floor)' : '';
+            sub.textContent = recommends + `. Place Limit Buy Order ${Math.round(entryOffset*100)}¢ below Close at $` + fmt(price - entryOffset, 2) + ` (or Market with 15m TTL). Targets: TP1 +${Math.round(tp1*100)}¢, TP2 +${Math.round(tp2*100)}¢${runnerFloorNote}, Stop Loss: Trailing ${slCoeff}x ATR.`;
+        } else if (signal === 'red') {
+            lbl.textContent = '🟥 RED CASCADE / LIQUIDATION RISK (DO NOT BUY)';
+            if (sigObj.regime === 'FLASH_CRASH') {
+                sub.textContent = 'Liquidation cascade waterfall active (Flash Crash). Severe downside risk. Symmetrical sit-out in 100% Cash to preserve principal.';
+            } else {
+                sub.textContent = 'Strong bearish trend bias (Price below VWMA & 1H HTF Bearish). High liquidation/drawdown risk. Symmetrical sit-out in 100% Cash.';
+            }
+        } else {
+            lbl.textContent = '🟨 YELLOW Standby Mode (100% Cash)';
+            if (sigObj.regime === 'MARKET_CHOP') {
+                sub.textContent = 'ADX < 20 (Market Chop). Symmetrical sit-out in 100% Cash to eliminate low-volatility churn.';
+            } else if (cooldownBars > 0) {
+                sub.textContent = 'Post-cascade cooldown active (' + cooldownBars + ' bars remaining). Waiting for structural confirmation before green entry.';
+            } else {
+                sub.textContent = 'No high-probability reversal setup confirmed. Standby in cash and wait for favorable support pullbacks.';
+            }
+        }
+    }
+}
+
+async function load() {
+    setLoading(true);
+    const updatedEl = document.getElementById('updated');
+    if (updatedEl) updatedEl.textContent = 'Refreshing...';
+    const pairEl = document.getElementById('pair-label');
+    if (pairEl) pairEl.textContent = currentAsset + '/USDT ' + currentTF + ' sniper signal';
+
+    try {
+        const htfTF = currentTF === '4h' ? '1d' : currentTF === '1h' ? '4h' : '1h';
+        const [raw, rawlh, raw5m] = await Promise.all([
+            fetchKlines(currentSymbol, currentTF, 200),
+            fetchKlines(currentSymbol, htfTF, 100).catch(() => []),
+            fetchKlines(currentSymbol, '5m', 100).catch(() => [])
+        ]);
+
+        if (!raw || !Array.isArray(raw) || raw.length === 0) {
+            throw new Error('No candle data returned');
+        }
+
+        const opens = raw.map(k=>parseFloat(k[1]));
+        const highs = raw.map(k=>parseFloat(k[2]));
+        const lows = raw.map(k=>parseFloat(k[3]));
+        const closes = raw.map(k=>parseFloat(k[4]));
+        const volumes = raw.map(k=>parseFloat(k[5]));
+        const times = raw.map(k=>new Date(k[0]));
+        const labels = times.map(t=>t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0'));
+
+        const liveCandle = raw[raw.length-1];
+        const cur = parseFloat(liveCandle[4]);
+        const prev = closes[closes.length-2];
+        const chgPct=((cur-prev)/prev)*100;
+
+        document.getElementById('price').textContent='$'+fmt(cur,2);
+        const chgEl=document.getElementById('chg');
+        chgEl.textContent=(chgPct>=0?'+':'')+fmt(chgPct,2)+'%';
+        chgEl.className='chg '+(chgPct>=0?'up':'dn');
+
+        const cH=highs.slice(0,-1), cL=lows.slice(0,-1), cC=closes.slice(0,-1), cV=volumes.slice(0,-1);
+
+        const cci = calcCCI(cH, cL, cC, 20);
+        const fisher = calcFisher(cH, cL, 9);
+        const fishSig = calcFisherSignal(fisher);
+        const tenkan = calcTenkan(cH, cL, 9);
+        const vwma = calcVWMA(cC, cV, 20);
+        const sma50 = calcSMA(cC, 50);
+        const atr = calcATR(cH, cL, cC, 14);
+        const adx = calcADX(cH, cL, cC, 14);
+
+        let htfSignal='red';
+        if (rawlh.length>0) {
+            const hH=rawlh.map(k=>parseFloat(k[2]));
+            const hL=rawlh.map(k=>parseFloat(k[3]));
+            const hC=rawlh.map(k=>parseFloat(k[4]));
+            const hV=rawlh.map(k=>parseFloat(k[5]));
+            htfSignal=calcHTFSignal(hH,hL,hC,hV);
+        }
+
+        htfSignalGlobal = htfSignal;
+        const htfEmoji=htfSignal==='green'?'🟩':htfSignal==='yellow'?'🟨':'🟥';
+        const htfValEl = document.getElementById('htf-val');
+        if (htfValEl) htfValEl.textContent = htfEmoji + ' ' + htfSignal.toUpperCase();
+        const htfSubEl = document.getElementById('htf-sub');
+        if (htfSubEl) htfSubEl.textContent = htfTF.toUpperCase() + ' trend bias';
+        const htfEl = document.getElementById('htf-arr');
+        if (htfEl) {
+            htfEl.textContent = htfSignal === 'green' ? 'Aligned' : htfSignal === 'yellow' ? 'Caution' : 'Opposing';
+            htfEl.className = 'ind-arrow ' + (htfSignal === 'green' ? 'arr-up' : htfSignal === 'yellow' ? 'arr-yellow' : 'arr-dn');
+        }
+
+        const cciUp=isRising(cci), fishUp=isRising(fisher), tenkUp=isRising(tenkan);
+        const curVWMA=lastVal(vwma), curSMA50=lastVal(sma50), curATR=lastVal(atr), curADX=lastVal(adx);
+
+        const volOK=isVolumeConfirmed(cV);
+        const atrOK=isATRExpanding(atr);
+        const adxOK=curADX!=null&&curADX>45;
+        const crossUp=isFisherCrossUp(fisher, fishSig);
+        const sessionOK=isGoodSession();
+
+        setInd('cci-val', 'cci-arr', lastVal(cci), cciUp);
+        setInd('fish-val', 'fish-arr', lastVal(fisher), fishUp);
+        setInd('tenk-val', 'tenk-arr', lastVal(tenkan), tenkUp);
+        setVWMA(curVWMA, cur);
+
+        const volValEl = document.getElementById('vol-val');
+        if (volValEl) volValEl.textContent = fmtVol(cV[cV.length-1]);
+        const volEl = document.getElementById('vol-arr');
+        if (volEl) {
+            volEl.textContent = volOK ? 'Above avg' : 'Below avg';
+            volEl.className = 'ind-arrow ' + (volOK ? 'arr-up' : 'arr-dn');
+        }
+
+        const atrValEl = document.getElementById('atr-val');
+        if (atrValEl) atrValEl.textContent = curATR != null ? fmt(curATR, 3) : '-';
+        const atrEl = document.getElementById('atr-arr');
+        if (atrEl) {
+            atrEl.textContent = atrOK ? 'Expanding' : 'Contracting';
+            atrEl.className = 'ind-arrow ' + (atrOK ? 'arr-up' : 'arr-dn');
+        }
+
+        const adxValEl = document.getElementById('adx-val');
+        if (adxValEl) adxValEl.textContent = curADX != null ? fmt(curADX, 1) : '-';
+        const adxEl = document.getElementById('adx-arr');
+        if (adxEl) {
+            adxEl.textContent = adxOK ? 'Trending (>45)' : curADX != null && curADX > 20 ? 'Weak (<45)' : 'Choppy (<20)';
+            adxEl.className = 'ind-arrow ' + (adxOK ? 'arr-up' : 'arr-flat');
+        }
+
+        const sessValEl = document.getElementById('sess-val');
+        if (sessValEl) sessValEl.textContent = getSessionName();
+        const sessEl = document.getElementById('sess-arr');
+        if (sessEl) {
+            sessEl.textContent = sessionOK ? 'Active' : 'Quiet';
+            sessEl.className = 'ind-arrow ' + (sessionOK ? 'arr-up' : 'arr-flat');
+        }
+
+        let fisher5mBearishCross = false;
+        let lastFisher5mVal = null;
+        let lastFisher5mSig = null;
+        let fisher5mUp = false;
+
+        if (raw5m && raw5m.length > 0) {
+            const hH5m = raw5m.map(k=>parseFloat(k[2]));
+            const hL5m = raw5m.map(k=>parseFloat(k[3]));
+            const hC5m = raw5m.map(k=>parseFloat(k[4]));
+            const cH5m = hH5m.slice(0,-1), cL5m = hL5m.slice(0,-1), cC5m = hC5m.slice(0,-1);
+            const fisher5mArr = calcFisher(cH5m, cL5m, 9);
+            const fisher5mSigArr = calcFisherSignal(fisher5mArr);
+            lastFisher5mVal = lastVal(fisher5mArr);
+            lastFisher5mSig = lastVal(fisher5mSigArr);
+            fisher5mUp = isRising(fisher5mArr);
+            
+            const n = fisher5mArr.length;
+            if (n >= 2) {
+                const f = fisher5mArr.filter(x=>x!=null), s = fisher5mSigArr.filter(x=>x!=null);
+                if (f.length >= 2 && s.length >= 2) {
+                    fisher5mBearishCross = f[f.length-1] < s[s.length-1] && f[f.length-2] >= s[s.length-2];
+                }
+            }
+        }
+
+        const bullishCandle=isBullishCandle(opens, closes, highs, lows);
+        const cciDiv=detectDivergence(cC, cci);
+        const fishDiv=detectDivergence(cC, fisher);
+        const cciAccel=isMomentumAccelerating(cci);
+        const lastBarTS=times[times.length-2]?.getTime()||0;
+
+        const candleEl = document.getElementById('candle-arr');
+        if (candleEl) {
+            document.getElementById('candle-val').textContent = bullishCandle ? 'Bullish' : 'Bearish';
+            candleEl.textContent = bullishCandle ? (closes[closes.length-2] > opens[opens.length-2] ? 'Close > Open' : 'Pin-bar Hammer') : 'Close < Open';
+            candleEl.className = 'ind-arrow ' + (bullishCandle?'arr-up':'arr-dn');
+        }
+
+        const divEl = document.getElementById('div-arr');
+        if (divEl) {
+            const divLabel = cciDiv!=='none'?'CCI '+cciDiv:fishDiv!=='none'?'Fisher '+fishDiv: 'None';
+            document.getElementById('div-val').textContent = divLabel;
+            divEl.textContent = cciDiv==='bearish' || fishDiv==='bearish'? 'Bearish div': cciDiv==='bullish'||fishDiv==='bullish'?'Bullish div':'No divergence';
+            divEl.className = 'ind-arrow '+(cciDiv==='bearish' || fishDiv==='bearish'?'arr-dn': cciDiv==='bullish'||fishDiv==='bullish'?'arr-up':'arr-flat');
+        }
+
+        const fisher5mEl = document.getElementById('fisher5m-arr');
+        if (fisher5mEl) {
+            document.getElementById('fisher5m-val').textContent = lastFisher5mVal !== null ? fmt(lastFisher5mVal, 2) : '-';
+            if (fisher5mBearishCross) {
+                fisher5mEl.textContent = 'SELL TRIGGER';
+                fisher5mEl.className = 'ind-arrow arr-dn';
+                document.getElementById('fisher5m-val').style.color = 'var(--red)';
+            } else {
+                fisher5mEl.textContent = fisher5mUp ? 'Bullish (↑)' : 'Neutral (↓)';
+                fisher5mEl.className = fisher5mUp ? 'ind-arrow arr-up' : 'ind-arrow arr-flat';
+                document.getElementById('fisher5m-val').style.color = '';
+            }
+        }
+
+        const momEl = document.getElementById('mom-arr');
+        if (momEl) {
+            document.getElementById('mom-val').textContent = cciAccel ? 'Accel' : 'Deccel';
+            momEl.textContent = cciAccel ? 'CCI accelerating' : 'CCI slowing';
+            momEl.className = 'ind-arrow ' + (cciAccel ? 'arr-up' : 'arr-flat');
+        }
+
+        const sigObj = calcSignal(cci, cciUp, fisher, fishUp, tenkUp, cur, curVWMA, curSMA50, volOK, atrOK, adxOK, crossUp, htfSignal, bullishCandle, cciDiv, fishDiv, cciAccel, lastBarTS, curADX, curATR);
+        applySignal(sigObj, cci, cciUp, fisher, fishUp, tenkUp, cur, curVWMA, curSMA50, volOK, atrOK, adxOK, crossUp);
+        fireAlertIfChanged(sigObj.signal, cur, cciUp, fishUp, tenkUp, sigObj);
+
+        try {
+            if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'DASHBOARD_INDICATORS',
+                    data: {
+                        asset: currentAsset,
+                        price: cur,
+                        priceChange: chgPct,
+                        cci: lastVal(cci),
+                        cciUp,
+                        fisher: lastVal(fisher),
+                        fishUp,
+                        tenkan: lastVal(tenkan),
+                        tenkUp,
+                        vwma: curVWMA,
+                        volume: cV[cV.length-1],
+                        volOK,
+                        atr: curATR,
+                        atrOK,
+                        adx: curADX,
+                        adxOK,
+                        sessionName: getSessionName(),
+                        sessionOK,
+                        htfSignal,
+                        bullishCandle,
+                        cciDiv,
+                        fishDiv,
+                        cciAccel,
+                        fisher5mVal: lastFisher5mVal,
+                        fisher5mBearishCross,
+                        fisher5mUp,
+                        consecutiveGreen: consecutiveGreen || 0,
+                        cooldownBars: cooldownBars || 0,
+                        sigObj
+                    }
+                }, '*');
+            }
+        } catch (_) {}
+
+        if (raw5m && raw5m.length >= 3) {
+            const c5m = raw5m.slice(0, -1);
+            const b1 = c5m[c5m.length - 1];
+            const b2 = c5m[c5m.length - 2];
+            const b1G = parseFloat(b1[4]) >= parseFloat(b1[1]);
+            const b2G = parseFloat(b2[4]) >= parseFloat(b2[1]);
+            if (b1G && b2G) consecutiveGreen = 2;
+            else if (b1G) consecutiveGreen = 1;
+            else consecutiveGreen = 0;
+        } else if (sigObj.signal === 'green') {
+            consecutiveGreen = Math.min(2, (consecutiveGreen || 0) + 1);
+        } else {
+            consecutiveGreen = 0;
+        }
+
+        const buyBlock = document.getElementById('buy-signal-block');
+        const buyText = document.getElementById('buy-signal-text');
+        const sellBlock = document.getElementById('sell-signal-block');
+        const sellText = document.getElementById('sell-signal-text');
+
+        if (buyBlock && buyText) {
+            if (sigObj.signal === 'green') {
+                buyBlock.style.background = 'rgba(22,163,74,0.12)';
+                buyBlock.style.borderColor = 'var(--green)';
+                buyText.textContent = 'LONG TRIGGER';
+                buyText.style.color = 'var(--green)';
+            } else {
+                buyBlock.style.background = 'rgba(0,0,0,0.05)';
+                buyBlock.style.borderColor = 'var(--border-strong)';
+                buyText.textContent = 'WAITING';
+                buyText.style.color = 'var(--muted)';
+            }
+        }
+
+        if (sellBlock && sellText) {
+            if (fisher5mBearishCross) {
+                sellBlock.style.background = 'rgba(220,38,38,0.12)';
+                sellBlock.style.borderColor = 'var(--red)';
+                sellText.textContent = 'EXIT NOW';
+                sellText.style.color = 'var(--red)';
+                checkFisherAutoClose(cur);
+            } else {
+                sellBlock.style.background = 'rgba(22,163,74,0.05)';
+                sellBlock.style.borderColor = 'var(--border-strong)';
+                sellText.textContent = 'HOLD / CLEAR';
+                sellText.style.color = 'var(--green)';
+            }
+        }
+
+        const cdEl = document.getElementById('cd-arr');
+        if (cdEl) {
+            document.getElementById('cd-val').textContent = cooldownBars>0?cooldownBars+' bars': 'Clear';
+            cdEl.textContent = cooldownBars>0?'Cooling down': 'Ready';
+            cdEl.className = 'ind-arrow '+(cooldownBars>0?'arr-dn':'arr-up');
+        }
+
+        const cbEl = document.getElementById('cb-arr');
+        const cbValEl = document.getElementById('cb-val');
+        if (cbEl) {
+            cbEl.textContent = consecutiveGreen>=2?'Confirmed (2/2)': consecutiveGreen===1?'1 bar (1/2)': 'Waiting (0/2)';
+            cbEl.className = 'ind-arrow '+(consecutiveGreen>=2?'arr-up':consecutiveGreen===1?'arr-yellow':'arr-flat');
+        }
+        if (cbValEl) {
+            cbValEl.textContent = consecutiveGreen+'/2';
+        }
+
+        const ohlcData = raw.map(k=> ({
+            x: k[0], o: parseFloat(k[1]), h: parseFloat(k[2]), l: parseFloat(k[3]), c: parseFloat(k[4])
+        }));
+
+        const tenkanXY = times.map((t,i)=>({x:t.getTime(), y: tenkan[i]}));
+        const vwmaXY = times.map((t,i)=>({x:t.getTime(), y:vwma[i]}));
+        const sma50XY = times.map((t,i)=>({x:t.getTime(), y:sma50[i]}));
+
+        try {
+            mkCandleChart('priceChart', ohlcData, tenkanXY, vwmaXY, sma50XY);
+
+            mkChart('cciChart', labels, [
+                {label:'+100',data:labels.map(()=>100),borderColor:'rgba(137,135,129,0.4)',backgroundColor:'transparent',fill:false,tension:0,pointRadius:0,borderWidth:1,borderDash:[3,3]},
+                {label:'0',data:labels.map(()=>0),borderColor:'rgba(137,135,129,0.2)',backgroundColor:'transparent',fill:false,tension:0,pointRadius:0,borderWidth:1,borderDash:[2,2]},
+                {label:'-100',data:labels.map(()=>-100),borderColor:'rgba(137,135,129,0.4)',backgroundColor:'transparent',fill:false,tension:0,pointRadius:0,borderWidth:1,borderDash:[3,3]},
+                {label:'CCI',data:cci, borderColor:cciUp?'#16a34a':'#dc2626',backgroundColor:cciUp?'rgba(22,163,74,0.07)':'rgba(220,38,38,0.07)',fill:false,tension:0.3,pointRadius:0,borderWidth:1.5}
+            ],{
+                ticks: {
+                    stepSize: 100,
+                    callback: v => [-300, -200, -100, 0, 100, 200, 300].includes(v) ? (v > 0 ? `+${v}` : `${v}`) : ''
+                },
+                scale: {
+                    suggestedMin: -200,
+                    suggestedMax: 200,
+                    afterDataLimits(sc) {
+                        sc.min = Math.min(sc.min, -200);
+                        sc.max = Math.max(sc.max, 200);
+                    }
+                }
+            });
+
+            mkChart('fishChart', labels, [
+                {label:'Fisher',data:fisher,borderColor:'#2a78d6',backgroundColor:'rgba(42,120,214,0.07)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
+                {label:'Signal',data:fishSig,borderColor:'#dc2626',backgroundColor:'transparent',fill:false,tension:0.3,pointRadius:0,borderWidth:1.5}
+            ],{ticks:{callback:v=>Number(v).toFixed(2)}});
+
+            const atrColor = atrOK ? '#22c55e' : '#ef4444';
+            mkChart('atrChart', labels, [
+                {label:'ATR',data:atr,borderColor:atrColor,backgroundColor:atrOK?'rgba(34,197,94,0.07)':'rgba(239,68,68,0.07)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5}
+            ],{ticks:{callback:v=>fmt(v,3)}});
+        } catch(chartErr) {
+            console.warn('[DASHBOARD] Chart rendering non-fatal warning:', chartErr);
+        }
+
+        const updatedEl = document.getElementById('updated');
+        if (updatedEl) updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString() + ' | Binance Live (30s)';
+    } catch(e) {
+        const sigLbl = document.getElementById('sig-label');
+        if (sigLbl) sigLbl.textContent = 'Error fetching data';
+        const sigSub = document.getElementById('sig-sub');
+        if (sigSub) sigSub.textContent = e.message + ' | Check connection.';
+        const updatedEl = document.getElementById('updated');
+        if (updatedEl) updatedEl.textContent = 'Fetch failed ' + new Date().toLocaleTimeString();
+        console.error(e);
+    }
+    setLoading(false);
+}
+
+function saveTrades() { safeStorage.setItem('sol_trades_' + today(), JSON.stringify(trades)); }
+function onTypeChange() {
+    const isPerp = document.getElementById('t-type').value === 'Perp';
+    document.getElementById('t-size').placeholder = isPerp? 'Margin Size $' : 'Size $';
+    document.getElementById('initial-note').textContent = isPerp ? 'Perp return% calculated vs this amount' : 'Spot return% calculated vs position size';
+}
+function getInitial() {
+    return parseFloat(document.getElementById('t-initial').value) || 240.00;
+}
+function addTrade() {
+    const type = document.getElementById('t-type').value;
+    const side = document.getElementById('t-side').value;
+    const asset = document.getElementById('t-asset').value.trim() || currentAsset;
+    const entry = parseFloat(document.getElementById('t-entry').value);
+    const exit = parseFloat(document.getElementById('t-exit').value);
+    const size = parseFloat(document.getElementById('t-size').value);
+    if(!entry||!exit||!size||isNaN(entry)||isNaN(exit)||isNaN(size)){
+        alert('Please fill in Entry, Exit, and '+(type==='Perp'?'Margin Size':'Size')+'.'); 
+        return;
+    }
+    const pricePct = (exit - entry) / entry;
+    const dirMult = side === 'Long' ? 1 : -1;
+    const pnl = dirMult * pricePct * size;
+    trades.push({id:Date.now(), type, side, asset, entry, exit, size, pnl});
+    saveTrades();
+    document.getElementById('t-entry').value = '';
+    document.getElementById('t-exit').value = '';
+    document.getElementById('t-size').value = '';
+    renderTrades();
+}
+function deleteTrade(id) {
+    trades = trades.filter(t => t.id !== id);
+    saveTrades();
+    renderTrades();
+}
+function renderTrades() {
+    const list = document.getElementById('trade-list');
+    const initial = getInitial();
+    if (trades.length === 0) {
+        list.innerHTML = '<div class="no-trades">No trades logged yet today.</div>';
+    } else {
+        list.innerHTML = trades.map(t => {
+            const pnlcls = t.pnl >= 0 ? 'pos' : 'neg';
+            const sideCls = t.side === 'Long' ? 't-side-long' : 't-side-short';
+            const typeCls = t.type === 'Perp' ? 't-type-perp' : 't-type-spot';
+            const isPerp = t.type === 'Perp';
+            const returnBase = isPerp? initial : t.size;
+            const retPct = returnBase > 0 ? (t.pnl / returnBase) * 100 : 0;
+            const sizeLabel = isPerp ? 'M' : '$';
+            return `<div class="trade-row">
+<span class="${typeCls}">${t.type}</span>
+<span class="${sideCls}">${t.side}</span>
+<span>${t.asset}</span>
+<span>$${fmt(t.entry,2)}</span>
+<span>$${fmt(t.exit, 2)}</span>
+<span>${sizeLabel}${fmt(t.size,2)}</span>
+<span class="t-pnl ${pnlcls}">${t.pnl>=0?'+':''}$${fmt(Math.abs(t.pnl),2)} <span style="font-size:10px">(${fmtP(retPct)}%)</span></span>
+<button class="del-btn" data-id="${t.id}" title="Remove">×</button>
+</div>`;
+        }).join('');
+    }
+    const total = trades.reduce((a,t) => a+t.pnl, 0);
+    const wins = trades.filter(t => t.pnl > 0).length;
+    const loss = trades.filter(t => t.pnl <= 0).length;
+    const retPct = initial > 0 ? (total / initial) * 100 : 0;
+    document.getElementById('stat-count').textContent = trades.length;
+    document.getElementById('stat-wl').innerHTML = `<span class="stat-green">${wins} W</span>/<span class="stat-red">${loss} L</span>`;
+    const pnlEl = document.getElementById('stat-pnl');
+    pnlEl.textContent = (total>=0?'+':'')+'$'+fmt(Math.abs(total),2);
+    pnlEl.className = 'stat-val '+(total>=0?'stat-green':'stat-red');
+    const retEl = document.getElementById('stat-return');
+    retEl.textContent = fmtP(retPct) + '% vs $'+fmt(initial,2);
+    retEl.className = 'stat-val ' + (retPct>=0?'stat-green':'stat-red');
+}
+
+function setLoading(on) {
+    document.getElementById('spin-icon').innerHTML = on ? '<span class="spinner"></span>' : '';
+    document.getElementById('refresh-btn').disabled = on;
+}
+
+function enableAlerts() {
+    try {
+        if (typeof window === 'undefined' || !('Notification' in window)) {
+            alert('This browser does not support desktop notifications.');
+            return;
+        }
+        const perm = getNotificationPermission();
+        if (perm === 'granted') {
+            showToast(' Alerts already enabled', 'You will be notified on every signal change.');
+            updateAlertBtn();
+            return;
+        }
+        Notification.requestPermission().then(() => {
+            updateAlertBtn();
+            if (getNotificationPermission() === 'granted') {
+                showToast(' Alerts enabled', 'You will be notified on every signal change.');
+                beep('green');
+            } else {
+                showToast('Alerts blocked', 'Permission denied or blocked by frame.');
+            }
+        }).catch(() => {
+            updateAlertBtn();
+        });
+    } catch(e) {
+        showToast('Alerts unavailable', 'Desktop notifications restricted in this environment.');
+    }
+}
+
+function updateAlertBtn() {
+    try {
+        const btn = document.getElementById('alert-btn');
+        if (!btn) return;
+        const perm = getNotificationPermission();
+        if (perm === 'denied') {
+            btn.textContent = ' Alerts blocked';
+            btn.style.opacity = '0.5';
+        } else if (perm === 'granted') {
+            btn.textContent = ' Alerts on';
+            btn.style.color = 'var(--green)';
+        } else {
+            btn.textContent = 'Enable Alerts';
+        }
+    } catch(e) {}
+}
+
+function beep(type) {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        if (type === 'green') {
+            osc.frequency.setValueAtTime(520, ctx.currentTime);
+            osc.frequency.setValueAtTime(780, ctx.currentTime + 0.12);
+            gain.gain.setValueAtTime(0.18, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.35);
+        } else if (type === 'red') {
+            osc.frequency.setValueAtTime(320, ctx.currentTime);
+            osc.frequency.setValueAtTime(220, ctx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.20, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.40);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.40);
+        } else {
+            osc.frequency.setValueAtTime(440, ctx.currentTime);
+            gain.gain.setValueAtTime(0.14, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.28);
+        }
+    } catch(e) {}
+}
+
+function showToast(title, body) {
+    let toast = document.getElementById('signal-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'signal-toast';
+        document.body.appendChild(toast);
+    }
+    toast.innerHTML = `<strong>${title}</strong><br><span style="font-size:11px; opacity:.85">${body.replace(/\n/g, '<br>')}</span>`;
+    toast.className = 'toast-show';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.className = ''; }, 6000);
+}
+
+function getTelegramConfig() {
+    return {
+        token: safeStorage.getItem('sol_tg_token', window.DASHBOARD_CONFIG?.TELEGRAM_TOKEN || ''),
+        chatId: safeStorage.getItem('sol_tg_chat_id', window.DASHBOARD_CONFIG?.TELEGRAM_CHAT_ID || '')
+    };
+}
+
+function promptTelegramConfig() {
+    const cur = getTelegramConfig();
+    const token = prompt('Enter Telegram Bot Token (from @BotFather):', cur.token);
+    if (token === null) return;
+    const chatId = prompt('Enter Telegram Chat ID (e.g. 123456789 or @channel):', cur.chatId);
+    if (chatId === null) return;
+
+    safeStorage.setItem('sol_tg_token', token.trim());
+    safeStorage.setItem('sol_tg_chat_id', chatId.trim());
+    updateBotUI();
+
+    if (token.trim() && chatId.trim()) {
+        const testNow = confirm('Telegram credentials saved!\n\nWould you like to send a test ping to your Telegram chat now?');
+        if (testNow) testTelegramAlert();
+    } else {
+        showToast('Telegram Config', 'Credentials cleared.');
+    }
+}
+
+async function testTelegramAlert() {
+    const cfg = getTelegramConfig();
+    if (!cfg.token || !cfg.chatId) {
+        alert('Please enter both Telegram Bot Token and Chat ID first.');
+        promptTelegramConfig();
+        return;
+    }
+    showToast('✈️ Telegram', 'Sending test ping to Telegram...');
+    try {
+        const title = '🟩 REVERSAL SNIPER TEST';
+        const body = `🎯 <b>SOL/USDT Telegram Alerts Connected!</b>\n` +
+                     `Time: ${new Date().toLocaleTimeString()}\n` +
+                     `Status: Active & ready for live sniper signals.`;
+        const res = await fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: cfg.chatId,
+                text: `<b>${title}</b>\n${body}`,
+                parse_mode: 'HTML'
+            })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('✅ Telegram Success', 'Test alert received in Telegram!');
+            alert('✅ Success! Test message received in your Telegram.');
+        } else {
+            const desc = data.description || 'Unknown error';
+            showToast('❌ Telegram Error', desc);
+            alert(`Telegram API Error (HTTP ${data.error_code}): ${desc}\n\nTroubleshooting:\n• If "chat not found": You must open your bot in Telegram and click START (/start) first.\n• If "Unauthorized": Verify your Bot Token from @BotFather.`);
+        }
+    } catch(err) {
+        showToast('❌ Network Error', err.message);
+        alert('Network connection error contacting Telegram: ' + err.message);
+    }
+}
+
+async function sendTelegram(title, body, signal) {
+    const cfg = getTelegramConfig();
+    if (!cfg.token || !cfg.chatId) {
+        console.warn('[Telegram] No Bot Token or Chat ID configured. Click "✈️ Telegram" to setup.');
+        return;
+    }
+    const text = `<b>${title}</b>\n${body}`;
+    try {
+        const res = await fetch(`https://api.telegram.org/bot${cfg.token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: cfg.chatId,
+                text,
+                parse_mode: 'HTML'
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+            console.error('[Telegram Error]', data.error_code, data.description);
+            showToast('Telegram Error', `${data.description} (${data.error_code})`);
+        } else {
+            console.log('[Telegram Alert Sent]', title);
+        }
+    } catch(e) {
+        console.warn('[Telegram] Send failed:', e.message);
+    }
+}
+
+let alertLog = [];
+try {
+    alertLog = JSON.parse(safeStorage.getItem('at_log_'+today(), '[]'));
+    if (!Array.isArray(alertLog)) alertLog = [];
+} catch(e) {
+    alertLog = [];
+}
+
+function logAlert(signal, price, entryPrice, tpPrice, slPrice, entryOffset) {
+    if (signal === 'yellow') return;
+    const entry = {
+        id:          Date.now(),
+        signal,
+        asset:       currentAsset,
+        tf:          currentTF,
+        signalPrice: price,
+        entryPrice,
+        tpPrice,
+        slPrice,
+        entryOffset,
+        time:        new Date().toLocaleTimeString(),
+        taken:       null,
+        outcome:     null,
+        autoEval:    false,
+    };
+    alertLog.unshift(entry);
+    if (alertLog.length > 30) alertLog.pop();
+    safeStorage.setItem('at_log_'+today(), JSON.stringify(alertLog));
+    renderAlertTracker();
+    const tfMins = {5:5, 15:15, 30:30, 60:60, 240:240}[parseInt(currentTF)] || 15;
+    setTimeout(() => autoEvalAlert(entry.id), tfMins * 4 * 60 * 1000);
+}
+
+function markAlert(id, taken, outcome) {
+    const entry = alertLog.find(e => e.id === id);
+    if (!entry) return;
+    if (taken !== undefined) entry.taken = taken;
+    if (outcome !== undefined) entry.outcome = outcome;
+    safeStorage.setItem('at_log_'+today(), JSON.stringify(alertLog));
+    renderAlertTracker();
+}
+
+async function autoEvalAlert(id) {
+    const entry = alertLog.find(e => e.id === id);
+    if (!entry || entry.outcome !== null) return;
+    try {
+        const baseApi = getBinanceApiUrl();
+        const apiPath = baseApi === '/api/binance' ? '/api/binance/klines' : `${baseApi}/api/v3/klines`;
+        const res = await fetch(`${apiPath}?symbol=${entry.asset}USDT&interval=${entry.tf}&limit=10`);
+        if (!res.ok) return;
+        const bars = await res.json();
+        const isLong = entry.signal === 'green';
+        for (const bar of bars) {
+            const h = parseFloat(bar[2]);
+            const l = parseFloat(bar[3]);
+            const tpHit = isLong ? h >= entry.tpPrice : l <= entry.tpPrice;
+            const slHit = isLong ? l <= entry.slPrice : h >= entry.slPrice;
+            if (tpHit && !slHit) { entry.outcome = true;  entry.autoEval = true; break; }
+            if (slHit && !tpHit) { entry.outcome = false; entry.autoEval = true; break; }
+            if (tpHit && slHit)  { entry.outcome = true;  entry.autoEval = true; break; }
+        }
+        safeStorage.setItem('at_log_'+today(), JSON.stringify(alertLog));
+        renderAlertTracker();
+    } catch(e) {}
+}
+
+function renderAlertTracker() {
+    const list = document.getElementById('at-list');
+    if (!list) return;
+    if (alertLog.length === 0) {
+        list.innerHTML = '<div style="font-size:11px;color:var(--muted);text-align:center;padding:8px 0">No signals yet.</div>';
+        return;
+    }
+
+    list.innerHTML = alertLog.slice(0, 15).map(e => {
+        const isLong = e.signal === 'green';
+        const rowCls = e.signal === 'green' ? 'long-row' : 'yellow-row';
+        const dir    = isLong ? '🟢 LONG' : '🟡 STANDBY';
+        const outcomeLabel =
+            e.outcome === true  ? `<span class="at-outcome win">WIN${e.autoEval?' ⚡':''}</span>` :
+            e.outcome === false ? `<span class="at-outcome loss">LOSS${e.autoEval?' ⚡':''}</span>` :
+                                  `<span class="at-outcome open">OPEN</span>`;
+        const takenLabel =
+            e.taken === true  ? '<span class="at-outcome win" style="font-size:9px">TAKEN</span>' :
+            e.taken === false ? '<span class="at-outcome skip" style="font-size:9px">SKIPPED</span>' :
+                                '<span class="at-outcome open" style="font-size:9px">?</span>';
+        const wlBtns = e.outcome === null ? `
+            <div class="at-wl">
+                <button class="w-btn" onclick="markAlert(${e.id}, true,  true)"  title="Mark Win — Taken">✓T</button>
+                <button class="l-btn" onclick="markAlert(${e.id}, true,  false)" title="Mark Loss — Taken">✗T</button>
+                <button class="w-btn" onclick="markAlert(${e.id}, false, true)"  title="Mark Win — Not Taken">✓N</button>
+                <button class="l-btn" onclick="markAlert(${e.id}, false, false)" title="Mark Loss — Not Taken">✗N</button>
+            </div>` : `<div class="at-wl"><button class="s-btn" onclick="resetAlert(${e.id})">↩</button></div>`;
+
+        return `<div class="at-row ${rowCls}">
+            <div>
+                <div style="font-weight:600;margin-bottom:2px">${dir} · ${e.asset} · ${e.tf} · ${e.time}</div>
+                <div class="at-detail">
+                    Signal: $${fmt(e.signalPrice,2)} · Limit: $${fmt(e.entryPrice,2)} (${Math.round((e.entryOffset||0.15)*100)}¢ dip)<br>
+                    TP1: $${fmt(e.tpPrice,2)} (+35¢) · SL: $${fmt(e.slPrice,2)} (1.5×ATR)
+                </div>
+            </div>
+            <div class="at-right">
+                ${takenLabel}
+                ${outcomeLabel}
+                ${wlBtns}
+            </div>
+        </div>`;
+    }).join('');
+
+    const taken    = alertLog.filter(e => e.taken === true  && e.outcome !== null);
+    const notTaken = alertLog.filter(e => e.taken === false && e.outcome !== null);
+    const all      = alertLog.filter(e => e.outcome !== null);
+    const takenW   = taken.filter(e => e.outcome === true).length;
+    const notW     = notTaken.filter(e => e.outcome === true).length;
+    const allW     = all.filter(e => e.outcome === true).length;
+
+    const el1 = document.getElementById('at-taken');
+    const el2 = document.getElementById('at-notaken');
+    const el3 = document.getElementById('at-all-wr');
+    if (el1) el1.textContent = `${takenW}W/${taken.length-takenW}L`;
+    if (el2) el2.textContent = `${notW}W/${notTaken.length-notW}L`;
+    if (el3) {
+        const wr = all.length > 0 ? Math.round((allW/all.length)*100) : 0;
+        el3.textContent = wr+'%';
+        el3.style.color = wr >= 50 ? 'var(--green)' : 'var(--red)';
+    }
+}
+
+function resetAlert(id) {
+    const entry = alertLog.find(e => e.id === id);
+    if (!entry) return;
+    entry.outcome = null; entry.taken = null; entry.autoEval = false;
+    safeStorage.setItem('at_log_'+today(), JSON.stringify(alertLog));
+    renderAlertTracker();
+}
+
+function fireAlertIfChanged(signal, price, cciUp, fishUp, tenkUp, sigObj) {
+    const key = `${signal}|${currentSymbol}|${currentTF}`;
+    if (key === lastSignalKey) return;
+    const prevKey = lastSignalKey;
+    const prev    = lastSignal;
+    lastSignalKey = key;
+    lastSignal    = signal;
+    if (prevKey === null || prev === null) return;
+    
+    const prevSignal = prevKey ? prevKey.split('|')[0] : null;
+    if (prevSignal === signal && prevKey.split('|')[1] === currentSymbol) return;
+    
+    beep(signal);
+    
+    const emoji = signal === 'green' ? '🟩' : signal === 'red' ? '🟥' : '🟨';
+    const label = signal === 'green' ? 'REVERSAL HOOK LONG' : signal === 'red' ? 'RED CASCADE — DO NOT BUY' : 'YELLOW — Standby';
+    
+    const curATRVal = (sigObj && sigObj.entryOffset) ? (sigObj.entryOffset / 0.25) : 0.35;
+    const isLong = signal === 'green';
+    
+    const entryOffset = sigObj?.entryOffset ?? Math.max(0.05, Math.min(curATRVal * 0.25, 0.20));
+    const entryPrice = price - entryOffset;
+
+    // OPTIMIZED BRACKETS: TP1 = 0.35 (Fee-neutral), SL = 1.5 * ATR
+    const slMult = 1.5;
+    const tp1Price = entryPrice + 0.35;
+    const tp2Price = entryPrice + (sigObj?.tp2 ?? 0.75);
+    const slPrice = entryPrice - (slMult * curATRVal);
+    
+    const inds = [cciUp ? 'CCI ↑' : 'CCI ↓', fishUp ? 'Fisher ↑' : 'Fisher ↓', tenkUp ? 'Tenkan ↑' : 'Tenkan ↓'].join(' | ');
+    const scoreNote = "Position Sizing: Commit 50% Margin ($120 on $240 base) at 50x Leverage";
+    
+    let body = `${currentAsset}/USDT @ $${fmt(price, 2)} (${currentTF})\n${inds}\n\n`;
+    
+    if (signal === 'green') {
+        body += `🎯 <b>LONG SNIPER ENTRY ACTIVE</b>\n`;
+        body += `▪️ <b>Limit Entry Price</b>: $${fmt(entryPrice, 2)} (${Math.round(entryOffset*100)}¢ pullback)\n`;
+        body += `▪️ <b>TP1 (Fee-Neutral Target)</b>: $${fmt(tp1Price, 2)} (+35¢)\n`;
+        body += `▪️ <b>TP2 (Runner Target)</b>: $${fmt(tp2Price, 2)} (+${Math.round((sigObj?.tp2??0.75)*100)}¢)\n`;
+        body += `▪️ <b>Stop Loss (Dynamic)</b>: $${fmt(slPrice, 2)} (-${slMult}x ATR)\n\n`;
+        body += `⚖️ <b>Risk & Margin Allocation</b>:\n${scoreNote}`;
+    } else if (signal === 'red') {
+        body += `⛔ <b>RED CASCADE / BEARISH DOWNTREND ACTIVE</b>\nLiquidation waterfall or bearish trend bias. Symmetrical sit-out in 100% Cash. Do NOT buy.`;
+    } else {
+        body += `⚠️ <b>STANDBY MODE (100% CASH)</b>\nSymmetrical sit-out active to preserve capital during chop or consolidation.`;
+    }
+    
+    if (getNotificationPermission() === 'granted') {
+        try {
+            const hexColor = signal === 'green' ? '16a34a' : signal === 'red' ? 'dc2626' : 'd97706';
+            new Notification(emoji + ' ' + label, {
+                body: body.replace(/<b>/g, '').replace(/<\/b>/g, ''),
+                icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="%23'+hexColor+'"/></svg>',
+                tag: 'sol-signal',
+                renotify: true
+            });
+        } catch(e) {}
+    }
+    
+    showToast(emoji + ' ' + label, body);
+    logAlert(signal, price, entryPrice, tp1Price, slPrice, entryOffset);
+
+    if (signal === 'green') {
+        sendTelegram(emoji + ' ' + label, body, signal);
+    }
+
+    // Dispatch to Devnet Auto-Trader Bot (server.js v10)
+    sendSignalToBot(signal, price, curATRVal, entryPrice, entryOffset, sigObj);
+}
+
+const isDark = () => {
+    try {
+        return Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme:dark)').matches);
+    } catch (e) {
+        return true;
+    }
+};
+const gridColor = () => isDark() ? '#2c2c2a' : '#e1e0d9';
+const tickColor = () => '#898781';
+
+const zoomState = {};
+function saveZoom(id){
+    const c=charts[id]; if(!c)return;
+    try{const x=c.scales.x; if(x&&x.min!=null)zoomState[id]={min:x.min,max:x.max};}catch(e){}
+}
+function restoreOrDefaultZoom(id, ohlcData, bars=60){
+    const c=charts[id]; if(!c)return;
+    if(zoomState[id]){
+        try{c.zoomScale('x',zoomState[id],'none');}catch(e){}
+    } else {
+        setTimeout(()=>{
+            try{
+                if(ohlcData&&ohlcData.length>0&&ohlcData[0].x){
+                    const last=ohlcData[ohlcData.length-1].x;
+                    const start=ohlcData[Math.max(0,ohlcData.length-bars)].x;
+                    c.zoomScale('x',{min:start,max:last},'none');
+                } else {
+                    const l=c.data.labels;
+                    if(l&&l.length>bars) c.zoomScale('x',{min:l[l.length-bars],max:l[l.length-1]},'none');
+                }
+            }catch(e){}
+        },50);
+    }
+}
+
+function mkCandleChart(id, ohlcData, tenkanXY, vwmaXY, sma50XY) {
+    try {
+        const el = document.getElementById(id);
+        if (!el || typeof Chart === 'undefined') return;
+        saveZoom(id);
+        const upColor = '#16a34a';
+        const downColor = '#dc2626';
+        if(charts[id]) {
+            try { charts[id].destroy(); } catch(e) {}
+        }
+        try {
+            charts[id] = new Chart(el, {
+                type: 'candlestick',
+                data: {
+                    datasets: [
+                        {
+                            label: 'OHLC',
+                            data: ohlcData,
+                            color: { up: upColor, down: downColor, unchanged: '#888' },
+                            borderColor: { up: upColor, down: downColor, unchanged: '#888' }
+                        },
+                        {
+                            label: 'Tenkan-sen',
+                            type: 'line',
+                            data: tenkanXY,
+                            borderColor: '#eda100',
+                            borderWidth: 1.5,
+                            borderDash: [5,3],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'VWMA',
+                            type: 'line',
+                            data: vwmaXY,
+                            borderColor: '#a855f7',
+                            borderWidth: 3,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'SMA50',
+                            type: 'line',
+                            data: sma50XY,
+                            borderColor: '#475569',
+                            borderWidth: 1.5,
+                            borderDash: [4,2],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: ctx => {
+                                    if(ctx.dataset.label === 'OHLC'){
+                                        const d = ctx.raw;
+                                        return `O:$${fmt(d.o,2)} H:$${fmt(d.h,2)} L:$${fmt(d.l,2)} C:$${fmt(d.c,2)}`;
+                                    }
+                                    return `${ctx.dataset.label}: $${fmt(ctx.parsed.y,2)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'timeseries',
+                            time: { unit: 'minute', displayFormats: { minute: 'HH:mm' } },
+                            grid: { color: gridColor() },
+                            ticks: { color: tickColor(), maxTicksLimit: 10, maxRotation: 0, font: { size: 10 } },
+                            border: { display: false }
+                        },
+                        y: {
+                            grid: { color: gridColor() },
+                            ticks: { color: tickColor(), font: { size: 10 }, callback: v => '$'+fmt(v,0) },
+                            border: { display: false }
+                        }
+                    }
+                }
+            });
+        } catch (candleErr) {
+            console.warn('Candlestick render fallback to line chart:', candleErr);
+            const closeData = ohlcData.map(d => ({ x: d.x, y: d.c }));
+            charts[id] = new Chart(el, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Price',
+                            data: closeData,
+                            borderColor: '#3b82f6',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Tenkan-sen',
+                            data: tenkanXY,
+                            borderColor: '#eda100',
+                            borderWidth: 1.5,
+                            borderDash: [5,3],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'VWMA',
+                            data: vwmaXY,
+                            borderColor: '#a855f7',
+                            borderWidth: 2.5,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'SMA50',
+                            data: sma50XY,
+                            borderColor: '#475569',
+                            borderWidth: 1.5,
+                            borderDash: [4,2],
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: tickColor(),
+                                maxTicksLimit: 8,
+                                callback: function(val, idx) {
+                                    const item = closeData[idx] || closeData[val];
+                                    if (item && item.x) {
+                                        const d = new Date(item.x);
+                                        return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+                                    }
+                                    return '';
+                                }
+                            },
+                            grid: { color: gridColor() }
+                        },
+                        y: {
+                            grid: { color: gridColor() },
+                            ticks: { color: tickColor(), callback: v => '$' + fmt(v, 2) }
+                        }
+                    }
+                }
+            });
+        }
+        restoreOrDefaultZoom(id, ohlcData, 60);
+    } catch(err) {
+        console.warn('mkCandleChart error:', err);
+    }
+}
+
+function mkChart(id, labels, datasets, yExtra={}){
+    try {
+        const el = document.getElementById(id);
+        if (!el || typeof Chart === 'undefined') return;
+        saveZoom(id);
+        if (charts[id]) {
+            try { charts[id].destroy(); } catch(e) {}
+        }
+        charts[id] = new Chart(el, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            plugins: {
+                legend: { display: false },
+                tooltip: { mode: 'index', intersect: false }
+            },
+            scales: {
+                x: {
+                    grid: { color: gridColor() },
+                    ticks: { color: tickColor(), maxTicksLimit: 10, maxRotation: 0, font: { size: 10 } },
+                    border: { display: false }
+                },
+                y: {
+                    grid: { color: gridColor() },
+                    ticks: { color: tickColor(), font: { size: 10 }, ...(yExtra.ticks||{}) },
+                    border: { display: false },
+                    ...(yExtra.scale||{})
+                }
+            }
+        }
+    });
+    restoreOrDefaultZoom(id, null, 60);
+    } catch(err) {
+        console.warn('mkChart error:', err);
+    }
+}
+
+const tradeListEl = document.getElementById('trade-list');
+if (tradeListEl) {
+    tradeListEl.addEventListener('click', function(e) {
+        const btn = e.target.closest('.del-btn');
+        if(!btn) return;
+        const id = parseInt(btn.getAttribute('data-id'));
+        if(!isNaN(id)) deleteTrade(id);
+    });
+}
+
+// Initialize dashboard immediately on script execution (DOM is already parsed above)
+try { updateAlertBtn(); } catch (e) {}
+try { load(); } catch (e) { console.error('Initial load failed:', e); }
+setInterval(() => {
+    try { load(); } catch (e) {}
+}, 30000);
+try { pollBotState(); } catch (e) {}
+setInterval(() => {
+    try { pollBotState(); } catch (e) {}
+}, 10000);
+
+// Redundant fallback for delayed iframe rendering environments
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const lbl = document.getElementById('sig-label');
+        if (lbl && (lbl.textContent === 'Loading...' || lbl.textContent === '-')) {
+            try { load(); } catch (e) {}
+        }
+    });
+}
+if (typeof window !== 'undefined') {
+    window.addEventListener('load', () => {
+        const lbl = document.getElementById('sig-label');
+        if (lbl && (lbl.textContent === 'Loading...' || lbl.textContent === '-')) {
+            try { load(); } catch (e) {}
+        }
+    });
+}
+</script>
+</body>
+</html>
