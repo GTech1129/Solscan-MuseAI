@@ -1,0 +1,6 @@
+{
+  "name": "SOL Reversal Adaptive Sniper Backtest Engine",
+  "description": "DB-aligned jump-diffusion backtest engine for Solana reversal sniper trading with Merton jump process, GARCH volatility clustering, and dynamic compounding.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
