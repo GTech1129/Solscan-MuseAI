@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard retired — use the main app</title>
+<meta http-equiv="refresh" content="0; url=/" />
+<script>window.location.replace('/');</script>
+<style>
+  body { background: #111; color: #ddd; font-family: ui-monospace, monospace; padding: 2rem; line-height: 1.6; }
+  a { color: #7fb4ff; }
+  code { color: #ffd479; }
+</style>
+</head>
+<body>
+<!-- Phase 2 RETIREMENT: this standalone dashboard (formerly ~3150 lines
+     with its own calcSignal, its own 2-bar cooldown, a hardcoded $120
+     margin, and a postMessage bridge that overwrote the React SPA's
+     indicators) is retired to a redirect. The React SPA at / is the
+     one canonical dashboard: it computes the canonical trigger
+     (src/engine/trigger.ts) locally from live klines, and the backtest
+     calls the same function.
+
+     What the old page had, and where it went:
+       - Live signal tiles + charts  -> React LiveDashboardView (same
+         data, canonical trigger, 5m confirmation gate the old page
+         lacked).
+       - Standalone calculator       -> DashboardCalculator inside the
+         SPA (manual position math; the fabricated "backtest" tab was
+         removed in Phase 1 and is NOT restored).
+       - Live-backtest variant       -> canonical backtest
+         (src/engine/backtest.ts) + real-klines verification
+         (scripts/verify-trigger.ts).
+       - Browser-side Telegram alerts -> DROPPED. A browser page
+         holding a Telegram bot token is a credential leak by
+         construction; server-side Telegram delivery is a future phase
+         (see PHASE2_NOTES.md "deliberately not changed").
+       - 2-bar cooldown              -> DROPPED as a live gate (it was
+         never part of the canonical trigger). Live uses the
+         dispatcher's 5-minute debounce; the backtest keeps its own
+         cooldown/circuit-breaker simulation.
+     If you bookmarked this page, update the bookmark to / . -->
+<h1>Dashboard retired</h1>
+<p>The standalone dashboard has been replaced by the main app, which now
+computes the one canonical signal. You should be redirected automatically.</p>
+<p>If not, <a href="/">open the main app</a>.</p>
+</body>
+</html>

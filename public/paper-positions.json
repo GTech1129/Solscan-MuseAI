@@ -1,0 +1,18 @@
+{
+  "orders": {},
+  "trades": [],
+  "balance": 30,
+  "dailyPnL": 0,
+  "wallet": {
+    "solBalance": 0,
+    "publicKey": null,
+    "path": null
+  },
+  "safetyToggle": {
+    "enabled": false,
+    "unlockedAt": null,
+    "unlockedBy": null
+  },
+  "executionMode": "simulate",
+  "updatedAt": "2026-10-26T13:56:14.264Z"
+}
