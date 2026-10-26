@@ -23,7 +23,11 @@ export function TradesLedger({
 
   const filteredTrades = useMemo(() => {
     return currentResult.trades.filter((t: Trade) => {
-      const side = t.side || (t.n % 3 === 0 ? 'Short' : 'Long');
+      // Phase 2: no fabricated side fallback. The old code invented a
+      // side from the trade number (every 3rd trade "Short"); trades
+      // without a side are now unknown-side, excluded from both
+      // LONG and SHORT filters instead of miscounted.
+      const side = t.side ?? '—';
       if (filterType === 'WIN' && t.pnl <= 0) return false;
       if (filterType === 'LOSS' && t.pnl >= 0) return false;
       if (filterType === 'LONG' && side !== 'Long') return false;
@@ -171,7 +175,7 @@ export function TradesLedger({
                   : 'text-neutral-400 hover:text-neutral-200'
               }`}
             >
-              Longs ({currentResult.trades.filter((t) => (t.side || (t.n % 3 === 0 ? 'Short' : 'Long')) === 'Long').length})
+              Longs ({currentResult.trades.filter((t) => t.side === 'Long').length})
             </button>
             <button
               onClick={() => setFilterType('SHORT')}
@@ -181,7 +185,7 @@ export function TradesLedger({
                   : 'text-neutral-400 hover:text-neutral-200'
               }`}
             >
-              Shorts ({currentResult.trades.filter((t) => (t.side || (t.n % 3 === 0 ? 'Short' : 'Long')) === 'Short').length})
+              Shorts ({currentResult.trades.filter((t) => t.side === 'Short').length})
             </button>
             <button
               onClick={() => setFilterType('FISHER')}
@@ -261,8 +265,11 @@ export function TradesLedger({
               {filteredTrades.map((t) => {
                 const isWin = t.pnl > 0;
                 const isLoss = t.pnl < 0;
-                const dt = t.dateTime || `2026-10-03 ${String(14 + Math.floor(t.n / 10)).padStart(2, '0')}:${String((t.n * 7) % 60).padStart(2, '0')}:15 UTC`;
-                const side = t.side || (t.n % 3 === 0 ? 'Short' : 'Long');
+                // Phase 2: no fabricated timestamps. Synthetic backtest
+                // trades have no datetimes; bar indices are the honest
+                // location. Side likewise: unknown renders as '—'.
+                const dt = t.dateTime || `Bars ${t.signalBar}–${t.exitBar}`;
+                const side = t.side ?? '—';
 
                 return (
                   <tr
@@ -278,7 +285,7 @@ export function TradesLedger({
                     </td>
                     <td className="py-1.5 px-3">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                        side === 'Long' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                        side === 'Long' ? 'bg-emerald-500/20 text-emerald-300' : side === 'Short' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-400'
                       }`}>
                         {side}
                       </span>

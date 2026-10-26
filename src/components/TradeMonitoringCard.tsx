@@ -342,9 +342,13 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
 
   // Automated Keeper Fill Simulation: When Green Gate is open and mark price reaches/dips below entry pivot,
   // automatically dispatch and fill the position on the daemon so it advances to Stage 3 (Position Active)
+  // Phase 2: fill decisions use baseMark (the noiseless live price).
+  // The old code used currentMark, which carries +/-2.5c random
+  // display noise — so fills could trigger on noise alone. The noise
+  // still animates the marker ball (display only); it no longer fills.
   const autoFilledGuidanceRef = useRef<boolean>(false);
   useEffect(() => {
-    if (isGreenGateOpen && currentMark <= guidanceEntry && !autoFilledGuidanceRef.current) {
+    if (isGreenGateOpen && baseMark <= guidanceEntry && !autoFilledGuidanceRef.current) {
       const activeRunning = orders.find((o) => o.status === 'filled' || o.status === 'placed');
       if (!activeRunning) {
         autoFilledGuidanceRef.current = true;
@@ -353,7 +357,7 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             requestPDA: 'CURRENT_LIVE_GUIDANCE',
-            price: currentMark,
+            price: baseMark,
             entryPrice: guidanceEntry,
             stopLoss: guidanceSl,
             takeProfit: guidanceTp,
@@ -365,19 +369,21 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
             const data = await res.json();
             if (data.status === 'filled' && data.requestPDA) {
               setSelectedPDA(data.requestPDA);
-              setActionMessage(`⚡ Keeper Matched! Price dipped to $${currentMark.toFixed(2)} (≤ $${guidanceEntry.toFixed(2)} entry pivot). Position is FILLED!`);
+              setActionMessage(`⚡ Keeper Matched! Price dipped to $${baseMark.toFixed(2)} (≤ $${guidanceEntry.toFixed(2)} entry pivot). Position is FILLED!`);
               fetchState();
             }
           })
           .catch(() => {});
       }
     }
-    if (!isGreenGateOpen || currentMark > guidanceEntry + 1.0) {
+    if (!isGreenGateOpen || baseMark > guidanceEntry + 1.0) {
       autoFilledGuidanceRef.current = false;
     }
-  }, [isGreenGateOpen, currentMark, guidanceEntry, guidanceSl, guidanceTp, orders, fetchState]);
+  }, [isGreenGateOpen, baseMark, guidanceEntry, guidanceSl, guidanceTp, orders, fetchState]);
 
-  const markPrice = currentMark || activeOrder.currentPrice || 121.26;
+  // Order-logic price: the noiseless live price (see the fill fix
+  // above). Display-only components may still use currentMark.
+  const markPrice = baseMark || activeOrder.currentPrice || 121.26;
   const isFilled = activeOrder.status === 'filled';
   const isPending = activeOrder.status === 'placed' || activeOrder.status === 'pending_keeper';
   const isClosed = activeOrder.status === 'closed';
@@ -801,7 +807,9 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
             </span>
           </div>
           <span className="text-[11px] text-neutral-500 font-mono">
-            Est. Liq: ~${(activeOrder.entryPrice * (1 - 1 / activeOrder.leverage)).toFixed(2)}
+            Est. Liq: ~${((activeOrder.side || '').toLowerCase() === 'short'
+              ? activeOrder.entryPrice * (1 + 1 / activeOrder.leverage)
+              : activeOrder.entryPrice * (1 - 1 / activeOrder.leverage)).toFixed(2)}
           </span>
         </div>
 
@@ -1335,7 +1343,7 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
           <div className="flex items-center justify-between text-xs text-neutral-300 font-semibold">
             <span>Next Steps cURL Commands &amp; Live API Payload</span>
             <span className="text-[11px] text-neutral-500 font-mono">
-              Port 3001 Backend Active
+              Bot API Active (same origin)
             </span>
           </div>
 
@@ -1348,19 +1356,19 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
               <div>
                 <span className="text-neutral-500"># Step 2: Poll Order Status</span>
                 <pre className="text-blue-300 overflow-x-auto whitespace-pre-wrap select-all py-1">
-                  curl http://localhost:3001/order/{activeOrder.requestPDA}
+                  curl /order/{activeOrder.requestPDA}
                 </pre>
               </div>
               <div>
                 <span className="text-neutral-500"># Step 1: Simulate Keeper Fill</span>
                 <pre className="text-emerald-300 overflow-x-auto whitespace-pre-wrap select-all py-1">
-                  curl -X POST http://localhost:3001/simulate-keeper-fill -H "Content-Type: application/json" -d '{`{"requestPDA":"${activeOrder.requestPDA}"}`}'
+                  curl -X POST /simulate-keeper-fill -H "Content-Type: application/json" -d '{`{"requestPDA":"${activeOrder.requestPDA}"}`}'
                 </pre>
               </div>
               <div>
                 <span className="text-neutral-500"># Step 3: Close Position</span>
                 <pre className="text-red-300 overflow-x-auto whitespace-pre-wrap select-all py-1">
-                  curl -X POST http://localhost:3001/close -H "Content-Type: application/json" -d '{`{"requestPDA":"${activeOrder.requestPDA}"}`}'
+                  curl -X POST /close -H "Content-Type: application/json" -d '{`{"requestPDA":"${activeOrder.requestPDA}"}`}'
                 </pre>
               </div>
             </div>
@@ -1546,7 +1554,7 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
                 <div>
                   <span className="font-semibold text-neutral-200 block">Compute Priority Fees</span>
                   <span className="text-neutral-400 text-[11px]">
-                    250,000 micro-lamports auto-injected for guaranteed keeper block inclusion.
+                    Priority fee env-driven (default 1,000 micro-lamports, capped at 50,000) — no inclusion guarantee.
                   </span>
                 </div>
               </div>
@@ -1556,7 +1564,7 @@ export const TradeMonitoringCard: React.FC<TradeMonitoringCardProps> = ({
                 <div>
                   <span className="font-semibold text-neutral-200 block">Risk Caps &amp; Circuit Breaker</span>
                   <span className="text-neutral-400 text-[11px]">
-                    Max 40x leverage cap, 1.5x ATR hard stop-loss, emergency kill-switch active.
+                    Max 60x reachable leverage (20/35/50 + 10x boost), tier SL 1.2/1.5/1.5× ATR, emergency kill-switch active.
                   </span>
                 </div>
               </div>

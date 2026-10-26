@@ -199,105 +199,30 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
     trades: { n: number; type: string; entry: number; exit: number; margin: number; pnl: number; balance: number }[];
   } | null>(null);
 
+  // P0 integrity: the old "Backtest" tab fabricated 15 trades with a
+  // hardcoded 12/15 win count and fixed +/- PnL percentages. It has been
+  // removed. This tab now honestly reports "no backtest data" until it is
+  // wired to a real engine run (src/engine/backtest.ts on real klines) in
+  // Phase 2. Never quote the old tab's numbers as performance evidence.
   const runBacktest = () => {
     setIsBacktesting(true);
-    setTimeout(() => {
-      let b = portfolioBalance || 30.0;
-      const initB = b;
-      const simulated: { n: number; type: string; entry: number; exit: number; margin: number; pnl: number; balance: number }[] = [];
-      const winCount = 12;
-      const total = 15;
-
-      for (let i = 1; i <= total; i++) {
-        const isWin = i % 5 !== 0;
-        const entry = currentPrice - (i % 2 === 0 ? 0.04 : 0.06);
-        const margin = Math.max(10.0, b * 0.35);
-        let pnl = 0;
-        let exit = 0;
-        let type = '';
-
-        if (isWin) {
-          exit = entry + 0.35;
-          pnl = parseFloat((margin * 0.075).toFixed(2));
-          type = i % 3 === 0 ? 'Full TP2' : 'Half TP1';
-        } else {
-          exit = entry - 0.25;
-          pnl = -parseFloat((margin * 0.05).toFixed(2));
-          type = 'Stop Loss';
-        }
-
-        b = parseFloat((b + pnl).toFixed(2));
-        simulated.push({
-          n: i,
-          type,
-          entry,
-          exit,
-          margin: parseFloat(margin.toFixed(2)),
-          pnl,
-          balance: b,
-        });
-      }
-
-      setBacktestResults({
-        finalBal: b,
-        winrate: (winCount / total) * 100,
-        totalTrades: total,
-        pnl: b - initB,
-        gain: ((b - initB) / initB) * 100,
-        trades: simulated,
-      });
-      setIsBacktesting(false);
-    }, 600);
+    setBacktestResults({
+      finalBal: portfolioBalance || 30.0,
+      winrate: 0,
+      totalTrades: 0,
+      pnl: 0,
+      gain: 0,
+      trades: [],
+    });
+    setIsBacktesting(false);
   };
 
   // --- 4. TODAY'S TRADES TRACKER STATE ---
   const todayKey = 'sol_trades_' + new Date().toISOString().slice(0, 10);
-  const DEFAULT_CALC_TRADES: TradeLogItem[] = [
-    {
-      id: 'TRD-001',
-      tradeId: 'TRD-001',
-      n: 1,
-      dateTime: '2026-10-03 14:15:22 UTC',
-      timestampEntry: '2026-10-03T14:10:00.000Z',
-      timestampExit: '2026-10-03T14:15:22.000Z',
-      regime: 'Range Bound / Support',
-      side: 'Long',
-      type: 'SL',
-      asset: 'SOL',
-      entry: 119.46,
-      exit: 119.32,
-      margin: 600.00,
-      size: 600.00,
-      lev: 20,
-      pnl: -0.30,
-      returnPct: -2.86,
-      fee: 0.05,
-      balance: 29.65,
-      executionMode: 'AUTOTRADE_BOT',
-    },
-    {
-      id: 'TRD-002',
-      tradeId: 'TRD-002',
-      n: 2,
-      dateTime: '2026-10-03 14:38:10 UTC',
-      timestampEntry: '2026-10-03T14:32:00.000Z',
-      timestampExit: '2026-10-03T14:38:10.000Z',
-      regime: 'Range Bound / Support',
-      side: 'Short',
-      type: 'SL',
-      asset: 'SOL',
-      entry: 119.67,
-      exit: 119.81,
-      margin: 600.00,
-      size: 600.00,
-      lev: 20,
-      pnl: -0.30,
-      returnPct: -2.86,
-      fee: 0.05,
-      balance: 29.30,
-      executionMode: 'AUTOTRADE_BOT',
-    },
-  ];
+  // P0 integrity: no seeded trades. The old defaults were two fabricated
+  // Oct-3 trades (margin 600.00, pnl -0.30). An empty tracker is honest;
+  // real trades appear here once the unified /api/trades ledger has data.
+  const DEFAULT_CALC_TRADES: TradeLogItem[] = [];
 
   const [trades, setTrades] = useState<TradeLogItem[]>(() => {
     try {
@@ -323,19 +248,21 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
             id: t.tradeId || t.id || `T-${idx + 1}`,
             tradeId: t.tradeId,
             n: t.n || (idx + 1),
-            dateTime: t.dateTime || (t.timestampEntry ? t.timestampEntry.replace('T', ' ').slice(0, 19) + ' UTC' : '2026-10-03 14:15:00 UTC'),
+            dateTime: t.dateTime || (t.timestampEntry ? t.timestampEntry.replace('T', ' ').slice(0, 19) + ' UTC' : ''),
             type: t.type || 'SL',
-            side: t.side || 'Long',
+            side: t.side || '',
             asset: t.asset || 'SOL',
-            entry: typeof t.entry === 'number' ? t.entry : (typeof t.entryPrice === 'number' ? t.entryPrice : 158.46),
-            exit: typeof t.exit === 'number' ? t.exit : (typeof t.exitPrice === 'number' ? t.exitPrice : 157.95),
-            size: typeof t.margin === 'number' ? t.margin : (typeof t.size === 'number' ? t.size : 600.00),
-            margin: typeof t.margin === 'number' ? t.margin : (typeof t.size === 'number' ? t.size : 600.00),
+            // P0 integrity: missing fields stay empty/zero — never the old
+            // fabricated fallbacks (158.46 / 157.95 / 600.00 / -0.30 / -2.86).
+            entry: typeof t.entry === 'number' ? t.entry : (typeof t.entryPrice === 'number' ? t.entryPrice : 0),
+            exit: typeof t.exit === 'number' ? t.exit : (typeof t.exitPrice === 'number' ? t.exitPrice : 0),
+            size: typeof t.margin === 'number' ? t.margin : (typeof t.size === 'number' ? t.size : 0),
+            margin: typeof t.margin === 'number' ? t.margin : (typeof t.size === 'number' ? t.size : 0),
             lev: t.lev || t.leverage || 20,
-            pnl: typeof t.pnl === 'number' ? t.pnl : -0.30,
-            returnPct: typeof t.returnPct === 'number' ? t.returnPct : (typeof t.pnlPercent === 'number' ? t.pnlPercent : -2.86),
-            fee: typeof t.fee === 'number' ? t.fee : 0.05,
-            balance: typeof t.balance === 'number' ? t.balance : 29.65,
+            pnl: typeof t.pnl === 'number' ? t.pnl : 0,
+            returnPct: typeof t.returnPct === 'number' ? t.returnPct : (typeof t.pnlPercent === 'number' ? t.pnlPercent : 0),
+            fee: typeof t.fee === 'number' ? t.fee : 0,
+            balance: typeof t.balance === 'number' ? t.balance : (portfolioBalance || 0),
             timestampEntry: t.timestampEntry,
             timestampExit: t.timestampExit,
             executionMode: t.executionMode || 'AUTOTRADE_BOT',
@@ -364,6 +291,11 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
   const [tEntry, setTEntry] = useState<string>('');
   const [tExit, setTExit] = useState<string>('');
   const [tSize, setTSize] = useState<string>('');
+  // Phase 2: the manual form previously had NO margin/leverage inputs,
+  // so every manual trade silently computed as $10.50 margin at 20x.
+  // Margin and leverage are now explicit inputs (defaults match the
+  // old silent values, but the user can see and change them).
+  const [tLev, setTLev] = useState<string>('20');
   const [tInitial, setTInitial] = useState<number>(() => portfolioBalance || 30.0);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -377,6 +309,7 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
     const entry = parseFloat(tEntry);
     const exit = parseFloat(tExit);
     const size = parseFloat(tSize) || 10.5;
+    const lev = parseFloat(tLev) || 20;
     if (!entry || !exit || isNaN(entry) || isNaN(exit)) {
       setFormError('Please enter valid Entry & Exit prices.');
       setTimeout(() => setFormError(null), 3500);
@@ -385,7 +318,7 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
     setFormError(null);
     const pricePct = (exit - entry) / entry;
     const dirMult = tSide === 'Long' ? 1 : -1;
-    const pnl = parseFloat((dirMult * pricePct * size * 20).toFixed(2));
+    const pnl = parseFloat((dirMult * pricePct * size * lev).toFixed(2));
     const nowIso = new Date().toISOString();
 
     const tradeId = `TRD-MANUAL-${Date.now()}`;
@@ -398,6 +331,8 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
       entry,
       exit,
       size,
+      margin: size,
+      lev,
       pnl,
       timestampEntry: nowIso,
       timestampExit: nowIso,
@@ -424,7 +359,7 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
           entryPrice: item.entry,
           exitPrice: item.exit,
           margin: item.size,
-          leverage: 20,
+          leverage: lev,
           pnl: item.pnl,
           timestampEntry: nowIso,
           timestampExit: nowIso,
@@ -726,7 +661,7 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
         )}
 
         {/* Quick Add Form */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-8 gap-2">
           <select
             value={tType}
             onChange={(e) => setTType(e.target.value as any)}
@@ -763,6 +698,25 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
             step="0.01"
             value={tExit}
             onChange={(e) => setTExit(e.target.value)}
+            className="bg-[#252523] border border-white/10 rounded px-1.5 py-1 text-white font-mono"
+          />
+          <input
+            placeholder="Margin $"
+            type="number"
+            step="0.5"
+            min="0"
+            value={tSize}
+            onChange={(e) => setTSize(e.target.value)}
+            className="bg-[#252523] border border-white/10 rounded px-1.5 py-1 text-white font-mono"
+          />
+          <input
+            placeholder="Lev ×"
+            type="number"
+            step="1"
+            min="1"
+            max="60"
+            value={tLev}
+            onChange={(e) => setTLev(e.target.value)}
             className="bg-[#252523] border border-white/10 rounded px-1.5 py-1 text-white font-mono"
           />
           <button
@@ -824,15 +778,17 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
                   const isWin = (t.pnl || 0) > 0;
                   const isLoss = (t.pnl || 0) < 0;
                   const tradeNum = t.n || (idx + 1);
-                  const dt = t.dateTime || (t.timestampEntry ? t.timestampEntry.replace('T', ' ').slice(0, 19) + ' UTC' : '2026-10-03 14:15:22 UTC');
-                  const entryVal = typeof t.entry === 'number' ? t.entry : 119.46;
-                  const exitVal = typeof t.exit === 'number' ? t.exit : 118.95;
-                  const marginVal = typeof t.margin === 'number' ? t.margin : (typeof t.size === 'number' ? t.size : 600.00);
+                  // P0 integrity: missing fields render empty/zero, never
+                  // the old fabricated fallbacks (119.46 / 118.95 / 600.00).
+                  const dt = t.dateTime || (t.timestampEntry ? t.timestampEntry.replace('T', ' ').slice(0, 19) + ' UTC' : '');
+                  const entryVal = typeof t.entry === 'number' ? t.entry : 0;
+                  const exitVal = typeof t.exit === 'number' ? t.exit : 0;
+                  const marginVal = typeof t.margin === 'number' ? t.margin : (typeof t.size === 'number' ? t.size : 0);
                   const levVal = t.lev || 20;
-                  const pnlVal = typeof t.pnl === 'number' ? t.pnl : -0.30;
-                  const retPctVal = typeof t.returnPct === 'number' ? t.returnPct : -2.86;
-                  const feeVal = typeof t.fee === 'number' ? t.fee : 0.05;
-                  const balVal = typeof t.balance === 'number' ? t.balance : 29.65;
+                  const pnlVal = typeof t.pnl === 'number' ? t.pnl : 0;
+                  const retPctVal = typeof t.returnPct === 'number' ? t.returnPct : 0;
+                  const feeVal = typeof t.fee === 'number' ? t.fee : 0;
+                  const balVal = typeof t.balance === 'number' ? t.balance : (portfolioBalance || 0);
 
                   return (
                     <tr key={t.id} className="hover:bg-white/[0.02] transition-colors">
@@ -841,9 +797,9 @@ export const DashboardCalculator: React.FC<DashboardCalculatorProps> = ({
                       <td className="py-1.5 px-2 text-neutral-200 font-sans text-[11px] whitespace-nowrap">{t.regime || 'Range Bound / Support'}</td>
                       <td className="py-1.5 px-2">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                          t.side === 'Long' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                          t.side === 'Long' ? 'bg-emerald-500/20 text-emerald-300' : t.side === 'Short' ? 'bg-rose-500/20 text-rose-300' : 'bg-neutral-800 text-neutral-400'
                         }`}>
-                          {t.side || 'Long'}
+                          {t.side || '—'}
                         </span>
                       </td>
                       <td className="py-1.5 px-2 font-sans">

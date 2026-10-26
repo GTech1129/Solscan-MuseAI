@@ -3,20 +3,25 @@ import {
   TrendingUp, 
   TrendingDown
 } from 'lucide-react';
-import { 
-  calcCCI, 
-  calcFisher, 
-  calcTenkan, 
-  calcVWMA, 
-  calcSMA, 
-  calcATR, 
-  calcADX, 
-  calcFisherSignal, 
-  isBullishCandle, 
-  calcHTFSignal, 
+import {
+  calcCCI,
+  calcFisher,
+  calcTenkan,
+  calcVWMA,
+  calcSMA,
+  calcATR,
+  calcADX,
+  calcFisherSignal,
+  isBullishCandle,
+  isBearishCandle,
+  calcHTFSignal,
   detectBullDiv,
-  calcSignalEngine
 } from '../engine/indicators.ts';
+// Phase 2: the canonical trigger is the ONLY signal computation.
+// calcSignalEngine is gone (removed from indicators.ts); the backtest
+// calls this same evaluateTrigger, so live and backtest cannot diverge.
+import { evaluateTrigger } from '../engine/trigger.ts';
+import { getCanonicalTierForBalance } from '../engine/tiers.ts';
 import { LiveIndicatorCharts, CandleChartBar } from './LiveIndicatorCharts.tsx';
 import { DashboardCalculator } from './DashboardCalculator.tsx';
 
@@ -104,9 +109,19 @@ interface IndicatorsState {
   fisher5mBearishCross: boolean;
   fisher5mUp: boolean;
   consecutiveGreen: number;
+  consecutiveRed: number;
   cooldownBars: number;
+  // Canonical trigger state (Phase 2). 'unknown' is the explicit
+  // 5m-feed-failure state: visible warning, never a stale green.
+  triggerState: 'LONG' | 'SHORT' | 'NONE' | 'UNKNOWN';
+  triggerDirection: 'long' | 'short' | null;
+  designedShort: boolean;
+  isChop: boolean;
+  marginMultiplier: number;
+  feedStatus: 'ok' | 'error';
+  feedWarning: string | null;
   // Master Signal & Regime
-  signal: 'green' | 'yellow' | 'red';
+  signal: 'green' | 'yellow' | 'red' | 'unknown';
   regime: string;
   entryPrice: number;
   entryOffset: number;
@@ -166,7 +181,19 @@ const DEFAULT_INDICATORS: IndicatorsState = {
   fisher5mBearishCross: false,
   fisher5mUp: true,
   consecutiveGreen: 0,
+  consecutiveRed: 0,
   cooldownBars: 0,
+  triggerState: 'NONE',
+  triggerDirection: null,
+  designedShort: false,
+  isChop: false,
+  marginMultiplier: 1,
+  // Initial state has NO live feed: the 119.05 placeholder values below
+  // are SYNTHETIC/UNSYNCED until the first real klines arrive. The
+  // banner shows SYNCHRONIZING until isLiveSynced, and this warning is
+  // the explicit label for the placeholder numbers themselves.
+  feedStatus: 'error',
+  feedWarning: 'No live feed yet — placeholder values are SYNTHETIC/UNSYNCED until the first real klines arrive.',
   signal: 'yellow',
   regime: 'RANGE_BOUND_SUPPORT',
   entryPrice: 119.05,
@@ -263,7 +290,6 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
       const fisherArr = calcFisher(cH, cL, 9);
       const tenkanArr = calcTenkan(cH, cL, 9);
       const vwmaArr = calcVWMA(cC, cV, 20);
-      const sma50Arr = calcSMA(cC, 50);
       const atrArr = calcATR(cH, cL, cC, 14);
       const adxArr = calcADX(cH, cL, cC, 14);
 
@@ -271,11 +297,13 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
       const curCCI = cciValid.length > 0 ? cciValid[cciValid.length - 1] : 0;
       const prevCCI = cciValid.length > 1 ? cciValid[cciValid.length - 2] : 0;
       const cciUp = curCCI > prevCCI;
+      const cciDown = curCCI < prevCCI;
 
       const fisherValid = fisherArr.filter((x): x is number => x != null);
       const curFisher = fisherValid.length > 0 ? fisherValid[fisherValid.length - 1] : 0;
       const prevFisher = fisherValid.length > 1 ? fisherValid[fisherValid.length - 2] : 0;
       const fishUp = curFisher > prevFisher;
+      const fishDown = curFisher < prevFisher;
 
       const tenkanValid = tenkanArr.filter((x): x is number => x != null);
       const curTenkan = tenkanValid.length > 0 ? tenkanValid[tenkanValid.length - 1] : curPrice;
@@ -283,6 +311,7 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
       const prev2Tenkan = tenkanValid.length > 2 ? tenkanValid[tenkanValid.length - 3] : prevTenkan;
       const tenkUp = curTenkan > prevTenkan;
       const tenk2BarsUp = tenkanValid.length >= 3 && curTenkan > prevTenkan && prevTenkan > prev2Tenkan;
+      const tenk2BarsDown = tenkanValid.length >= 3 && curTenkan < prevTenkan && prevTenkan < prev2Tenkan;
 
       // 1. Rising Tenkan-sen (>= 2 Candles, >= 60m): 30m Aggregation (2x 15m bars = 1x 30m bar)
       const h30m: number[] = [];
@@ -297,11 +326,13 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
       const prev30mTenk = tenk30mValid.length > 1 ? tenk30mValid[tenk30mValid.length - 2] : cur30mTenk;
       const prev230mTenk = tenk30mValid.length > 2 ? tenk30mValid[tenk30mValid.length - 3] : prev30mTenk;
       const tenk30m2BarsUp = tenk30mValid.length >= 3 && cur30mTenk > prev30mTenk && prev30mTenk > prev230mTenk;
+      const tenk30m2BarsDown = tenk30mValid.length >= 3 && cur30mTenk < prev30mTenk && prev30mTenk < prev230mTenk;
 
       // 2. Candle Momentum Detection: Close >= High - (0.0010 * Close)
       // Confirms the current 15m bar closed within 0.10% of its high (virtually no upper wick)
       const lastBarClose = cC[cC.length - 1];
       const lastBarHigh = cH[cH.length - 1];
+      const lastBarLow = cL[cL.length - 1];
       const candleMomentum = lastBarHigh > 0 && lastBarClose >= (lastBarHigh - (0.0010 * lastBarClose));
 
       const vwmaValid = vwmaArr.filter((x): x is number => x != null);
@@ -363,27 +394,37 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
       // CCI Momentum Acceleration
       const cciAccel = cciValid.length >= 3 && (cciValid[cciValid.length - 1] - cciValid[cciValid.length - 2] > cciValid[cciValid.length - 2] - cciValid[cciValid.length - 3]);
 
-      // 5m Bar Confirmation & Fisher Exit Check
+      // 5m Bar Confirmation & Fisher Exit Check (Phase 2: trailing
+      // counts in BOTH directions + an explicit feed flag. The old code
+      // counted only green bars and silently left confirmation at 0
+      // when the 5m feed failed — indistinguishable from "no setup".
+      // Now a missing/failed 5m feed sets fiveMinFeedOk=false, and the
+      // canonical trigger returns UNKNOWN with a visible warning.)
       let lastFisher5mVal: number | null = null;
       let fisher5mBearishCross = false;
       let fisher5mUp = false;
       let consecutiveGreen5m = 0;
+      let consecutiveRed5m = 0;
+      let fiveMinFeedOk = false;
 
       if (raw5m && Array.isArray(raw5m) && raw5m.length > 5) {
-        // Evaluate the last 2 completed 5m bars (excluding forming in-progress candle)
+        fiveMinFeedOk = true;
+        // Trailing run of closed 5m bars (excluding the forming
+        // in-progress candle). Only one direction can be nonzero: the
+        // run ends at the most recent closed bar. Doji (close == open)
+        // counts as green, matching the old convention.
         const closed5mBars = raw5m.slice(0, -1);
-        if (closed5mBars.length >= 2) {
-          const bar1 = closed5mBars[closed5mBars.length - 1]; // most recent closed 5m bar
-          const bar2 = closed5mBars[closed5mBars.length - 2]; // 2nd most recent closed 5m bar
-          const bar1Green = parseFloat(bar1[4]) >= parseFloat(bar1[1]); // Close >= Open
-          const bar2Green = parseFloat(bar2[4]) >= parseFloat(bar2[1]);
-
-          if (bar1Green && bar2Green) {
-            consecutiveGreen5m = 2;
-          } else if (bar1Green) {
-            consecutiveGreen5m = 1;
+        for (let b = closed5mBars.length - 1; b >= 0; b--) {
+          const isGreenBar = parseFloat(closed5mBars[b][4]) >= parseFloat(closed5mBars[b][1]);
+          if (b === closed5mBars.length - 1) {
+            if (isGreenBar) consecutiveGreen5m = 1;
+            else consecutiveRed5m = 1;
+          } else if (isGreenBar && consecutiveGreen5m > 0) {
+            consecutiveGreen5m++;
+          } else if (!isGreenBar && consecutiveRed5m > 0) {
+            consecutiveRed5m++;
           } else {
-            consecutiveGreen5m = 0;
+            break;
           }
         }
 
@@ -402,55 +443,78 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
         }
       }
 
-      // Regime & Overall Signal via synchronized calcSignalEngine
-      const cciDivType: 'bullish' | 'bearish' | 'none' = hasBullDiv ? 'bullish' : 'none';
-      const sigRes = calcSignalEngine(
+      // Canonical trigger (Phase 2) — the ONLY signal computation in
+      // the live view. The old calcSignalEngine + ADX<12 overlay are
+      // gone: chop is traded at reduced size (not sat out), shorts
+      // are a designed path, and a failed 5m feed yields UNKNOWN with
+      // a visible warning (never a silent block, never a stale green).
+      // The backtest calls this same evaluateTrigger, so live and
+      // backtest cannot print different answers on the same candles.
+      const bearishCandle = isBearishCandle(opens, closes, highs, lows);
+      const trig = evaluateTrigger({
+        price: curPrice,
+        vwma: curVWMA,
+        atr: curATR,
+        adx: curADX,
+        prevAdx: prevADX,
+        htfSignal,
         cciUp,
         fishUp,
-        tenkUp,
-        curPrice,
-        curVWMA,
-        sma50Arr.filter((x): x is number => x != null).slice(-1)[0] ?? null,
-        volOK,
-        atrOK,
-        adxOK,
-        fishUp,
-        htfSignal,
-        candleBullish,
-        cciDivType,
-        'none',
-        cciAccel,
-        curADX,
-        curATR,
-        prevADX,
-        lastVol,
-        tenk30m2BarsUp || tenk2BarsUp,
-        lastBarHigh,
-        lastBarClose,
-        portfolioBalance,
+        bullishCandle: candleBullish,
+        tenkRising2Candles: tenk30m2BarsUp || tenk2BarsUp,
+        volumeGateMet,
+        cciDown,
+        fishDown,
+        bearishCandle,
+        tenkFalling2Candles: tenk30m2BarsDown || tenk2BarsDown,
         consecutiveGreen5m,
+        consecutiveRed5m,
+        fiveMinFeedOk,
+        balance: portfolioBalance,
+        candleHigh: lastBarHigh,
+        candleLow: lastBarLow,
+        candleClose: lastBarClose,
+        bullDiv: hasBullDiv,
+        bearDiv: false,
+        cciAccel,
+        volConfirmed: volOK,
+      });
+
+      // Display entry: longs buy below close, shorts sell above close,
+      // no-trade states show the current price (there is no entry).
+      const entryPrice = trig.state === 'LONG'
+        ? curPrice - trig.entryOffset
+        : trig.state === 'SHORT'
+        ? curPrice + trig.entryOffset
+        : curPrice;
+
+      const trigTier = getCanonicalTierForBalance(portfolioBalance);
+      const tierRiskCapPct = trigTier.riskCapPct;
+      const tierRiskCapDollar = Math.max(
+        0.25,
+        Math.min(portfolioBalance * tierRiskCapPct, trigTier.maxRiskDollarCap),
       );
-
-      // 6) Ultra-Low ADX Filter (ADX < 12 & Vol > 35K -> Forced Yellow Standby / 0x Leverage Sit-Out)
-      if (curADX < 12 && (lastVol > 35000 || volOK)) {
-        sigRes.signal = 'yellow';
-        sigRes.regime = 'MARKET_CHOP';
-        sigRes.recommendedMargin = 0;
-      }
-
-      const entryPrice = sigRes.signal === 'green' ? curPrice - sigRes.entryOffset : curPrice + sigRes.entryOffset;
 
       let confidence: 'HIGH CONFIDENCE' | 'MEDIUM CONFIDENCE' | 'LOW CONFIDENCE' = 'MEDIUM CONFIDENCE';
       let confidenceSub = '1H HTF is Neutral (Consolidation)';
-      if (curADX < 12 && (lastVol > 35000 || volOK)) {
+      if (trig.state === 'UNKNOWN') {
         confidence = 'LOW CONFIDENCE';
-        confidenceSub = `ADX (14) = ${curADX.toFixed(1)} < 12 with Volume > 35K: Ultra-Low ADX Chop Sit-Out`;
-      } else if (volumeGateMet && consecutiveGreen5m < 2) {
+        confidenceSub = '5m confirmation feed unavailable — signal UNKNOWN (not a stale green)';
+      } else if (trig.state === 'NONE' && trig.regime === 'FLASH_CRASH') {
+        confidence = 'LOW CONFIDENCE';
+        confidenceSub = 'Flash crash: ADX > 35 + 1H red + price below VWMA — no new positions either direction';
+      } else if ((trig.state === 'LONG' || trig.state === 'SHORT') && trig.isChop) {
         confidence = 'MEDIUM CONFIDENCE';
-        confidenceSub = `Volume Gate ≥25K Met (${volStr}): Waiting for 2-Bar Confirmation on 5m chart (${consecutiveGreen5m}/2 bars)`;
+        confidenceSub = `Market chop (ADX < 20): trading at reduced size (${trig.marginMultiplier}x margin, TP1 ${trig.tp1Dist})`;
+      } else if (
+        trig.state === 'NONE' &&
+        (trig.hooks.standardLong || trig.hooks.slowBullLong || trig.hooks.standardShort || trig.hooks.slowBearShort)
+      ) {
+        confidence = 'MEDIUM CONFIDENCE';
+        confidenceSub = `Hook fired, waiting for 2-bar 5m confirmation (green ${trig.confirmation.long}/2, red ${trig.confirmation.short}/2)`;
       } else if (htfSignal === 'green') {
         confidence = 'HIGH CONFIDENCE';
-        confidenceSub = consecutiveGreen5m >= 2 ? '1H HTF Bullish & 2-Bar 5m Confirmed' : '1H HTF Bullish Alignment';
+        confidenceSub = trig.confirmation.longOk ? '1H HTF Bullish & 2-Bar 5m Confirmed' : '1H HTF Bullish Alignment';
       } else if (htfSignal === 'red') {
         confidence = 'LOW CONFIDENCE';
         confidenceSub = '1H HTF Opposing Bearish Bias';
@@ -477,7 +541,7 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
         atr: curATR,
         atrOK,
         adx: curADX,
-        adxStatus: curADX < 12 ? 'Ultra-Low (<12)' : adxStatus,
+        adxStatus,
         adxOK,
         sessionName,
         sessionOK,
@@ -485,7 +549,7 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
         candleBullish,
         candleLabel,
         candleMomentum,
-        orderExecutionType: sigRes.orderExecutionType,
+        orderExecutionType: trig.orderExecutionType,
         divergence,
         divType,
         cciAccel,
@@ -493,47 +557,65 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
         fisher5mBearishCross,
         fisher5mUp,
         consecutiveGreen: consecutiveGreen5m,
-        cooldownBars: sigRes.signal === 'red' ? 2 : 0,
-        signal: sigRes.signal,
-        regime: sigRes.regime,
+        consecutiveRed: consecutiveRed5m,
+        // The old code showed "2 bars" of cooldown on any red signal —
+        // a display hack with no live meaning. Live cooldown is the
+        // dispatcher's 5-minute debounce; this tile is Clear unless a
+        // real cooldown is tracked (none is, in the live view).
+        cooldownBars: 0,
+        triggerState: trig.state,
+        triggerDirection: trig.direction,
+        designedShort: trig.designedShort,
+        isChop: trig.isChop,
+        marginMultiplier: trig.marginMultiplier,
+        feedStatus: fiveMinFeedOk ? 'ok' : 'error',
+        feedWarning: fiveMinFeedOk
+          ? null
+          : '5m confirmation feed unavailable — signal is UNKNOWN (not a stale green). 15m tiles below are still live.',
+        signal: trig.uiSignal,
+        regime: trig.regime,
         entryPrice,
-        entryOffset: sigRes.entryOffset,
-        tp1: sigRes.tp1,
-        tp2: sigRes.tp2,
-        tp1Percent: sigRes.tp1Percent,
-        tp2Percent: sigRes.tp2Percent,
-        slCoeff: sigRes.slCoeff,
-        recommendedMargin: sigRes.recommendedMargin,
-        activeTier: sigRes.activeTier,
-        tierRiskCapPct: sigRes.tierRiskCapPct,
-        tierRiskCapDollar: sigRes.tierRiskCapDollar,
-        setupGrade: sigRes.setupGrade,
-        adxSlope: sigRes.adxSlope,
-        isExhaustionReversal: sigRes.isExhaustionReversal,
-        earlyProfitLock: sigRes.earlyProfitLock,
-        trailingStopOffset: sigRes.trailingStopOffset,
-        limitOrderTTLMinutes: sigRes.limitOrderTTLMinutes,
+        entryOffset: trig.entryOffset,
+        tp1: trig.tp1Dist,
+        tp2: trig.tp2Dist,
+        tp1Percent: trig.tp1Percent,
+        tp2Percent: trig.tp2Percent,
+        slCoeff: trig.slCoeff,
+        recommendedMargin: trig.margin,
+        activeTier: trig.tier,
+        tierRiskCapPct,
+        tierRiskCapDollar,
+        setupGrade: trig.setupGrade,
+        adxSlope: trig.adxSlope,
+        isExhaustionReversal: trig.isExhaustionReversal,
+        earlyProfitLock: trig.earlyProfitLock,
+        trailingStopOffset: trig.trailingStopOffset,
+        limitOrderTTLMinutes: trig.limitOrderTTLMinutes,
         confidence,
         confidenceSub,
       });
 
-      // Synchronize signal and Green Gate status with backend daemon and listeners
+      // Synchronize signal and gate status with backend daemon and listeners.
+      // 'unknown' is forwarded as-is: the backend records it as the
+      // current signal state (never as a green gate).
       fetch('/signal-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          signal: sigRes.signal,
-          regime: sigRes.regime,
+          signal: trig.uiSignal,
+          regime: trig.regime,
           price: curPrice,
-          isGreenGate: sigRes.signal === 'green',
+          isGreenGate: trig.state === 'LONG',
+          isShortGate: trig.state === 'SHORT',
         }),
       }).catch(() => {});
       window.dispatchEvent(
         new CustomEvent('SIGNAL_UPDATED', {
           detail: {
-            signal: sigRes.signal,
-            isGreenGate: sigRes.signal === 'green',
-            regime: sigRes.regime,
+            signal: trig.uiSignal,
+            isGreenGate: trig.state === 'LONG',
+            isShortGate: trig.state === 'SHORT',
+            regime: trig.regime,
           },
         })
       );
@@ -643,6 +725,12 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
       calculateTelemetry(raw15m, raw1h, raw5m, currentAsset, rawChartTf || raw15m);
     } else {
       setBinanceStatus({ connected: false, latencyMs: null });
+      // P0 safety: a feed failure must UNSYNC. Previously isLiveSynced
+      // stayed true forever after the first calculation, so a stale green
+      // signal could keep auto-dispatching during an outage. Clearing it
+      // blocks the dispatcher (which requires isLiveSynced) and returns
+      // the UI to its SYNCING state until real data resumes.
+      setIsLiveSynced(false);
     }
   }, [currentAsset, calculateTelemetry, chartTimeframe]);
 
@@ -657,105 +745,66 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
     };
   }, [fetchTelemetry, updateIntervalSecs]);
 
-  // Synchronize incoming telemetry from iframe when dashboard.html runs
+  // Phase 2 REMOVED: the postMessage telemetry bridge from dashboard.html.
+  // dashboard.html computed its OWN signal (calcSignal, no 5m gate,
+  // hardcoded $120 margin) and overwrote this view's indicators on
+  // every message — a second live signal path with different gates.
+  // dashboard.html is retired to a redirect (see PHASE2_NOTES.md);
+  // this view computes the canonical trigger locally from its own
+  // klines feed (calculateTelemetry above) and nothing overwrites it.
+
+  // Autonomous Signal Dispatcher (Phase 2): forwards canonical LONG
+  // and designed-SHORT signals to the bot daemon. UNKNOWN and NONE
+  // never dispatch (a feed failure cannot auto-trade, and a flash
+  // crash has no direction). Shorts dispatch ONLY with the canonical
+  // designedShort marker — the server allowlist rejects any red
+  // payload without it, so this path cannot re-open arbitrary shorts.
+  // Turning the Auto-Trader toggle off keeps shorts (and longs)
+  // manual. The 5-minute debounce is unchanged.
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        if (!event.data) return;
-        if (event.data.type === 'DASHBOARD_INDICATORS' && event.data.data) {
-          const d = event.data.data;
-          const sig = d.sigObj?.signal || (d.isLongTrigger ? 'green' : 'yellow');
-          const reg = d.sigObj?.regime || 'RANGE_BOUND_SUPPORT';
-          const off = d.sigObj?.entryOffset || 0.08;
-          const ep = sig === 'green' ? d.price - off : d.price + off;
-
-          let conf: 'HIGH CONFIDENCE' | 'MEDIUM CONFIDENCE' | 'LOW CONFIDENCE' = 'MEDIUM CONFIDENCE';
-          let confSub = '1H HTF is Neutral (Consolidation)';
-          if (d.htfSignal === 'green') {
-            conf = 'HIGH CONFIDENCE';
-            confSub = '1H HTF Bullish Alignment';
-          } else if (d.htfSignal === 'red') {
-            conf = 'LOW CONFIDENCE';
-            confSub = '1H HTF Opposing Bearish Bias';
-          }
-
-          setIndicators((prev) => ({
-            ...prev,
-            price: d.price || prev.price,
-            priceChange: d.priceChange ?? prev.priceChange,
-            cci: d.cci ?? prev.cci,
-            cciUp: d.cciUp ?? prev.cciUp,
-            fisher: d.fisher ?? prev.fisher,
-            fishUp: d.fishUp ?? prev.fishUp,
-            tenkan: d.tenkan ?? prev.tenkan,
-            tenkUp: d.tenkUp ?? prev.tenkUp,
-            vwma: d.vwma ?? prev.vwma,
-            volOK: d.volOK ?? prev.volOK,
-            atr: d.atr ?? prev.atr,
-            atrOK: d.atrOK ?? prev.atrOK,
-            adx: d.adx ?? prev.adx,
-            adxOK: d.adxOK ?? prev.adxOK,
-            sessionName: d.sessionName ?? prev.sessionName,
-            sessionOK: d.sessionOK ?? prev.sessionOK,
-            htfSignal: d.htfSignal ?? prev.htfSignal,
-            candleBullish: d.bullishCandle ?? prev.candleBullish,
-            cciAccel: d.cciAccel ?? prev.cciAccel,
-            fisher5mVal: d.fisher5mVal ?? prev.fisher5mVal,
-            fisher5mBearishCross: d.fisher5mBearishCross ?? prev.fisher5mBearishCross,
-            fisher5mUp: d.fisher5mUp ?? prev.fisher5mUp,
-            consecutiveGreen: d.consecutiveGreen ?? prev.consecutiveGreen,
-            cooldownBars: d.cooldownBars ?? prev.cooldownBars,
-            signal: sig,
-            regime: reg,
-            entryPrice: ep,
-            entryOffset: off,
-            tp1: d.sigObj?.tp1 || 0.35,
-            tp2: d.sigObj?.tp2 || 0.75,
-            slCoeff: d.sigObj?.slCoeff || 1.5,
-            recommendedMargin: d.sigObj?.recommendedMargin ?? (sig === 'red' ? 0 : 120),
-            confidence: conf,
-            confidenceSub: confSub,
-          }));
-          setLastUpdated(new Date().toLocaleTimeString());
-        }
-      } catch (_) {}
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  // Autonomous Signal Dispatcher: Automatically forwards Green Signals to Bot Daemon
-  useEffect(() => {
-    if (!isLiveSynced || indicators.signal !== 'green' || !autoTradeActive) return;
+    if (!isLiveSynced || !autoTradeActive) return;
+    const trigState = indicators.triggerState;
+    if (trigState !== 'LONG' && trigState !== 'SHORT') return;
+    if (trigState === 'SHORT' && !indicators.designedShort) return;
 
     const now = Date.now();
     // Debounce to at most 1 automatic order per 5 minutes per asset
     if (now - lastAutoTradeTimeRef.current < 5 * 60 * 1000) return;
 
     lastAutoTradeTimeRef.current = now;
-    console.log(`[AUTOTRADE DISPATCHER] 🟩 Green Signal confirmed for ${currentAsset}! Forwarding order to execution daemon...`);
+    const sideLabel = trigState === 'LONG' ? 'Long' : 'Short';
+    console.log(`[AUTOTRADE DISPATCHER] ${trigState === 'LONG' ? '🟩' : '🟥'} ${sideLabel} Signal confirmed for ${currentAsset}! Forwarding order to execution daemon...`);
 
     fetch('/signal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         asset: currentAsset,
-        direction: 'buy',
+        direction: trigState === 'LONG' ? 'buy' : 'sell',
+        designedShort: indicators.designedShort,
         price: indicators.price,
         entryOffset: indicators.entryOffset,
         recommendedMargin: indicators.recommendedMargin,
+        marginMultiplier: indicators.marginMultiplier,
+        isChop: indicators.isChop,
+        regime: indicators.regime,
+        adx: indicators.adx,
+        atr: indicators.atr,
         candleMomentum: indicators.candleMomentum,
         orderExecutionType: indicators.orderExecutionType,
         executionType: indicators.orderExecutionType,
         tenk30m2BarsUp: indicators.tenk30m2BarsUp,
         volumeGateMet: indicators.volumeGateMet,
-        volume: indicators.volume,
-        barConfirmation: indicators.consecutiveGreen,
+        consecutiveGreen5m: indicators.consecutiveGreen,
+        consecutiveRed5m: indicators.consecutiveRed,
+        barConfirmation: trigState === 'LONG' ? indicators.consecutiveGreen : indicators.consecutiveRed,
         consecutiveGreen: indicators.consecutiveGreen,
+        consecutiveRed: indicators.consecutiveRed,
         chartTimeframe,
         tp1: indicators.tp1,
         tp2: indicators.tp2,
+        tp1Dist: indicators.tp1,
+        tp2Dist: indicators.tp2,
         tp1Percent: indicators.tp1Percent,
         tp2Percent: indicators.tp2Percent,
         slCoeff: indicators.slCoeff,
@@ -768,7 +817,7 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
       .then(async (res) => {
         const data = await res.json();
         if (res.ok && data.status === 'placed') {
-          setAutoTradeToast(`🤖 Auto-Trade Placed: Long ${currentAsset} @ $${data.entryPrice?.toFixed(2) || indicators.entryPrice} | PDA: ${data.requestPDA?.slice(0, 8)}...`);
+          setAutoTradeToast(`🤖 Auto-Trade Placed: ${sideLabel} ${currentAsset} @ $${data.entryPrice?.toFixed(2) || indicators.entryPrice} | PDA: ${data.requestPDA?.slice(0, 8)}...`);
         } else if (data.status === 'rejected') {
           setAutoTradeToast(`⚠️ Auto-Trade Skipped: ${data.reason || data.message}`);
         }
@@ -782,6 +831,15 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
   // Signal UI styling helpers
   const isGreen = isLiveSynced && indicators.signal === 'green';
   const isRed = isLiveSynced && indicators.signal === 'red';
+  const isUnknown = isLiveSynced && indicators.signal === 'unknown';
+  // A red tile is a SHORT only when the canonical trigger fired one;
+  // a red tile with state NONE is the flash-crash sit-out, not a trade.
+  const isShort = isRed && indicators.triggerState === 'SHORT';
+  // 2-bar confirm tile shows the count for the active direction.
+  const confirmCount = indicators.triggerDirection === 'short' ? indicators.consecutiveRed : indicators.consecutiveGreen;
+  const boostNote = indicators.regime === 'BULL_TREND_DRIFT' || indicators.setupGrade === 'GRADE_A'
+    ? ' Server may add the +10x boost (max 60x).'
+    : '';
 
   const signalCardBorder = !isLiveSynced
     ? 'border-amber-500/30 bg-amber-500/5'
@@ -806,7 +864,7 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1.5 flex-1 min-w-[280px]">
             <div className={`text-xl sm:text-2xl font-bold flex items-center gap-2 ${signalTextColor}`}>
-              <span>{!isLiveSynced ? '⏳' : isGreen ? '🟩' : isRed ? '🟥' : '🟨'}</span>
+              <span>{!isLiveSynced ? '⏳' : isGreen ? '🟩' : isRed ? '🟥' : isUnknown ? '⚠️' : '🟨'}</span>
               <span>
                 {!isLiveSynced
                   ? 'SYNCHRONIZING LIVE MARKET FEED...'
@@ -818,8 +876,12 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
                     : (indicators.tenk30m2BarsUp || indicators.tenk2BarsUp) && indicators.volumeGateMet
                     ? 'RISING 30m TENKAN (≥2 CANDLES) & VOLUME GATE (≥25K) LONG (2-BAR 5m CONFIRMED)'
                     : 'REVERSAL HOOK LONG (2-BAR 5m CONFIRMED)'
+                  : isShort
+                  ? 'BEARISH REVERSAL SHORT (2-BAR 5m CONFIRMED)'
                   : isRed
                   ? 'FLASH CRASH SIT-OUT (100% CASH)'
+                  : isUnknown
+                  ? 'SIGNAL UNKNOWN — 5M FEED UNAVAILABLE'
                   : 'YELLOW STANDBY MODE (100% CASH)'}
               </span>
             </div>
@@ -827,21 +889,25 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
               {!isLiveSynced
                 ? `Connecting to exchange matching engine and calculating real-time 15m/1h indicators for ${currentAsset}/USDT...`
                 : isGreen
-                ? `Active Regime: ${indicators.regime.replace(/_/g, ' ')} · Margin Collateral: $${indicators.recommendedMargin.toFixed(2)} · Position Size: $${(indicators.recommendedMargin * (indicators.activeTier === 'TIER_1' ? 20 : indicators.activeTier === 'TIER_2' ? 35 : 50)).toFixed(2)} (${indicators.activeTier === 'TIER_1' ? 'Tier 1: 20x' : indicators.activeTier === 'TIER_2' ? 'Tier 2: 35x' : 'Tier 3: 50x'} · ${(indicators.tierRiskCapPct * 100).toFixed(0)}% Cap -$${indicators.tierRiskCapDollar.toFixed(2)}). ${indicators.orderExecutionType === 'POST_ONLY_BEST_BID' ? `Place Post-Only Limit Order directly at Best Bid at bar close ($${indicators.entryPrice.toFixed(2)}) for Maker rebates/zero-fee pricing.` : `Place Limit Buy Order ${Math.round(indicators.entryOffset * 100)}¢ below Close at $${indicators.entryPrice.toFixed(2)}${indicators.atr && indicators.atr < 0.35 ? ' (Tightened 0.10× ATR offset)' : ''} (or Market with 15m TTL).`} Targets: TP1 +${Math.round(indicators.tp1 * 100)}¢ (${indicators.tp1Percent}%), Extended TP2 +${Math.round(indicators.tp2 * 100)}¢ (${indicators.tp2Percent}% 1.50× ATR Runner)${indicators.regime === 'RANGE_BOUND_SUPPORT' ? ' (+15¢ Runner Floor)' : ''}, Stop Loss: Trailing ${indicators.slCoeff}× ATR.`
+                ? `Active Regime: ${indicators.regime.replace(/_/g, ' ')} · Margin Collateral: $${indicators.recommendedMargin.toFixed(2)} · Position Size: $${(indicators.recommendedMargin * (indicators.activeTier === 'TIER_1' ? 20 : indicators.activeTier === 'TIER_2' ? 35 : 50)).toFixed(2)} (${indicators.activeTier === 'TIER_1' ? 'Tier 1: 20x' : indicators.activeTier === 'TIER_2' ? 'Tier 2: 35x' : 'Tier 3: 50x'} base · ${(indicators.tierRiskCapPct * 100).toFixed(0)}% Cap -$${indicators.tierRiskCapDollar.toFixed(2)}).${boostNote} ${indicators.orderExecutionType === 'POST_ONLY_BEST_BID' ? `Place Post-Only Limit Order directly at Best Bid at bar close ($${indicators.entryPrice.toFixed(2)}) for Maker rebates/zero-fee pricing.` : `Place Limit Buy Order ${Math.round(indicators.entryOffset * 100)}¢ below Close at $${indicators.entryPrice.toFixed(2)}${indicators.atr && indicators.atr < 0.35 ? ' (Tightened 0.10× ATR offset)' : ''} (or Market with 15m TTL).`} Targets: TP1 +${Math.round(indicators.tp1 * 100)}¢ (${indicators.tp1Percent}%), Extended TP2 +${Math.round(indicators.tp2 * 100)}¢ (${indicators.tp2Percent}% runner${indicators.regime === 'BULL_TREND_DRIFT' ? ', 1.50× ATR' : ''}), Stop Loss: Trailing ${indicators.slCoeff}× ATR.${indicators.isChop ? ' Chop trade: half margin, tighter targets.' : ''}`
+                : isShort
+                ? `Active Regime: ${indicators.regime.replace(/_/g, ' ')} · Margin Collateral: $${indicators.recommendedMargin.toFixed(2)} · Position Size: $${(indicators.recommendedMargin * (indicators.activeTier === 'TIER_1' ? 20 : indicators.activeTier === 'TIER_2' ? 35 : 50)).toFixed(2)} (${indicators.activeTier === 'TIER_1' ? 'Tier 1: 20x' : indicators.activeTier === 'TIER_2' ? 'Tier 2: 35x' : 'Tier 3: 50x'} base · ${(indicators.tierRiskCapPct * 100).toFixed(0)}% Cap -$${indicators.tierRiskCapDollar.toFixed(2)}).${boostNote} ${indicators.orderExecutionType === 'POST_ONLY_BEST_BID' ? `Place Post-Only Limit Order directly at Best Bid at bar close ($${indicators.entryPrice.toFixed(2)}) for Maker rebates/zero-fee pricing.` : `Place Limit Sell Order ${Math.round(indicators.entryOffset * 100)}¢ above Close at $${indicators.entryPrice.toFixed(2)}${indicators.atr && indicators.atr < 0.35 ? ' (Tightened 0.10× ATR offset)' : ''} (or Market with 15m TTL).`} Targets: TP1 -${Math.round(indicators.tp1 * 100)}¢ (${indicators.tp1Percent}%), Extended TP2 -${Math.round(indicators.tp2 * 100)}¢ (${indicators.tp2Percent}% runner), Stop Loss: Trailing ${indicators.slCoeff}× ATR.${indicators.isChop ? ' Chop trade: half margin, tighter targets.' : ''}`
                 : isRed
-                ? 'Liquidation cascade waterfall active (Flash Crash: ADX > 35 & 1H Red HTF). Symmetrical sit-out in 100% Cash to preserve principal.'
+                ? 'Liquidation cascade waterfall active (Flash Crash: ADX > 35 & 1H Red HTF). No new positions in either direction — sit-out in 100% Cash to preserve principal.'
+                : isUnknown
+                ? 'The 5-minute confirmation feed is unavailable, so no signal can be confirmed right now. This is NOT a buy or sell signal — the last confirmed state is not carried forward. 15m tiles below are still live; trading resumes automatically when the 5m feed returns.'
                 : indicators.regime === 'MARKET_CHOP'
-                ? 'ADX < 20 (Market Chop). Symmetrical sit-out in 100% Cash to eliminate low-volatility churn.'
+                ? 'ADX < 20 (Market Chop). Chop is TRADED at reduced size (half margin, tighter TP1, faster exits) — not sat out. Waiting for a hook + 2-bar 5m confirmation.'
                 : 'No high-probability reversal setup confirmed. Standby in cash and wait for favorable support pullbacks.'}
             </p>
           </div>
 
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5">
-            {/* Buy Setup Block */}
+            {/* Trade Setup Block (Phase 2: side-aware — shorts are a designed path, not a red error) */}
             <div className="flex-1 sm:w-28 bg-neutral-900/80 border border-white/10 rounded-lg p-2.5 text-center">
-              <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Buy Setup</div>
-              <div className={`text-xs font-bold mt-0.5 ${!isLiveSynced ? 'text-amber-400' : isGreen ? 'text-emerald-400' : 'text-neutral-400'}`}>
-                {!isLiveSynced ? 'SYNCING...' : isGreen ? 'LONG TRIGGER' : 'WAITING'}
+              <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Trade Setup</div>
+              <div className={`text-xs font-bold mt-0.5 ${!isLiveSynced ? 'text-amber-400' : isGreen ? 'text-emerald-400' : isShort ? 'text-rose-400' : 'text-neutral-400'}`}>
+                {!isLiveSynced ? 'SYNCING...' : isGreen ? 'LONG TRIGGER' : isShort ? 'SHORT TRIGGER' : 'WAITING'}
               </div>
             </div>
 
@@ -877,14 +943,14 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
                   ? 'bg-emerald-950/40 border-emerald-500/40 hover:bg-emerald-900/50'
                   : 'bg-neutral-900/80 border-neutral-700 hover:bg-neutral-800'
               }`}
-              title="Click to toggle automated order execution on Green Signals"
+              title="Click to toggle automated order execution on Green and designed-Short signals"
             >
               <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider flex items-center justify-center gap-1">
                 <span className={`w-2 h-2 rounded-full ${autoTradeActive ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'}`} />
                 <span>Auto-Trader</span>
               </div>
               <div className={`text-xs font-bold mt-0.5 ${autoTradeActive ? 'text-emerald-400' : 'text-neutral-400'}`}>
-                {autoTradeActive ? 'ARMED (ON)' : 'PAUSED'}
+                {autoTradeActive ? 'AUTO-ON' : 'PAUSED'}
               </div>
             </button>
 
@@ -901,6 +967,16 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 5m Feed Warning (Phase 2): visible whenever the 5m feed is down
+          while the 15m feed is live — an UNKNOWN signal must never look
+          like a silent block or a stale green. */}
+      {isLiveSynced && indicators.feedWarning && (
+        <div className="bg-amber-950/80 border border-amber-500/50 rounded-xl p-3 flex items-center gap-2 text-xs text-amber-200 font-mono shadow-lg">
+          <span className="text-base">⚠️</span>
+          <span>{indicators.feedWarning}</span>
+        </div>
+      )}
 
       {/* Auto-Trade Notification Banner */}
       {autoTradeToast && (
@@ -1077,14 +1153,16 @@ export const LiveDashboardView: React.FC<LiveDashboardViewProps> = ({
             </span>
           </div>
 
-          {/* Tile 14: 2-Bar Confirm (5m) */}
+          {/* Tile 14: 2-Bar Confirm (5m) — Phase 2: shows the count for
+              the active direction (green run for longs, red run for
+              shorts), not always the green count. */}
           <div className="bg-[#1c1c1a] border border-white/10 rounded-lg p-3 flex flex-col justify-between hover:border-white/20 transition-all">
-            <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">2-Bar Confirm (5m)</span>
+            <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">2-Bar Confirm (5m){indicators.triggerDirection === 'short' ? ' — RED' : ''}</span>
             <div className="text-sm font-bold font-mono text-white my-1">
-              {indicators.consecutiveGreen}/2
+              {confirmCount}/2
             </div>
-            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full w-fit ${indicators.consecutiveGreen >= 2 ? 'bg-emerald-500/15 text-emerald-400' : indicators.consecutiveGreen === 1 ? 'bg-amber-500/15 text-amber-400' : 'bg-neutral-800 text-neutral-400'}`}>
-              {indicators.consecutiveGreen >= 2 ? 'Confirmed (2/2)' : indicators.consecutiveGreen === 1 ? '1 bar (1/2)' : 'Waiting (0/2)'}
+            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full w-fit ${confirmCount >= 2 ? 'bg-emerald-500/15 text-emerald-400' : confirmCount === 1 ? 'bg-amber-500/15 text-amber-400' : 'bg-neutral-800 text-neutral-400'}`}>
+              {confirmCount >= 2 ? 'Confirmed (2/2)' : confirmCount === 1 ? '1 bar (1/2)' : 'Waiting (0/2)'}
             </span>
           </div>
 

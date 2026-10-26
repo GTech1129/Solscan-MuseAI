@@ -45,6 +45,8 @@ interface Position {
   fillPrice: number;
   margin: number;
   leverage: number;
+  tp1?: number;
+  tp2?: number;
   takeProfit: number;
   stopLoss: number;
   time: string;
@@ -487,14 +489,16 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
     );
   };
 
-  // Panic Flatten
+  // Panic Flatten (deliberate kill-switch, user-confirmed).
+  // P0 safety: the server now requires an EXPLICIT closeAll flag for a
+  // mass flatten; a bare reason no longer flattens anything.
   const handlePanicFlatten = async () => {
     if (confirm('🚨 PANIC FLATTEN: Close all open positions on Jupiter immediately at market price?')) {
       try {
         await fetch(`${botUrl}/close`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: 'PANIC_FLATTEN' }),
+          body: JSON.stringify({ reason: 'PANIC_FLATTEN', closeAll: true }),
         });
       } catch {
         // Offline fallback
@@ -505,12 +509,20 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
     }
   };
 
-  // Dispatch Signal / Simulated Order
+  // Dispatch a MANUAL test signal (Phase 2: the server computes sizing
+  // from the canonical tier table — this sender no longer overrides
+  // margin or targets. The old payload forced recommendedMargin
+  // (testMargin x 4) and tp2 1.20 regardless of tier; the server
+  // ignored the margin and honored the tp2 override, so test orders
+  // were sized off-tier. Gate fields are included because this is a
+  // deliberate operator dispatch: 2-bar confirmation is asserted by
+  // the operator pressing the button, and a test short carries the
+  // designedShort marker. The server mode (paper/simulate/live)
+  // decides what actually happens — the button label no longer claims
+  // "Simulate" in a live-armed process.)
   const handleSendSignal = async (overrideSide?: 'Long' | 'Short') => {
     const side = overrideSide || testSide;
     const entryPrice = side === 'Long' ? solPrice - testOffset : solPrice + testOffset;
-    const tpDist = 0.35;
-    const slDist = tpDist * 1.5;
 
     try {
       const res = await fetch(`${botUrl}/signal`, {
@@ -519,14 +531,16 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
         body: JSON.stringify({
           asset: currentAsset,
           direction: side === 'Long' ? 'buy' : 'sell',
+          designedShort: side === 'Short',
           price: solPrice,
           entryOffset: testOffset,
-          recommendedMargin: testMargin * 4, // $30 margin
-          tp1: tpDist,
-          tp2: 1.20,
+          regime: 'RANGE_BOUND_SUPPORT',
+          adx: 25,
+          consecutiveGreen5m: 2,
+          consecutiveRed5m: 2,
+          barConfirmation: 2,
           tp1Percent: 30,
           tp2Percent: 70,
-          slCoeff: 1.5,
         }),
       });
       const data = await res.json();
@@ -569,7 +583,7 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
 
   const tickers = ['SOL', 'BTC', 'ETH', 'BNB', 'XRP'];
   const currentTierLeverage = autoSwitcher?.activePreset?.leverage || (balance < 100 ? 20 : balance < 250 ? 35 : 50);
-  const marginCollateral = autoSwitcher?.activePreset?.defaultMargin || (balance < 100 ? Math.min(balance, 25.00) : balance < 250 ? Math.min(balance * 0.50, 100.00) : Math.min(balance * 0.40, 250.00));
+  const marginCollateral = autoSwitcher?.activePreset?.defaultMargin || (balance < 100 ? Math.min(balance, 25.00) : balance < 250 ? Math.min(balance * 0.50, 50.00) : Math.min(balance * 0.40, 100.00));
   const buyingPower = marginCollateral * currentTierLeverage; // Accurate buying power committed per trade ($500.00 on $30 balance)
   const maxLeverageCapacity = balance * currentTierLeverage; // Theoretical 100% wallet exposure ($600.00 on $30 balance)
   const maxAllowedPositions = autoSwitcher?.activePreset?.maxOpenPositions ?? (balance < 100 ? 1 : balance < 250 ? 2 : 3);
@@ -807,7 +821,7 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
               </div>
 
               <p className="text-xs text-neutral-400 leading-relaxed">
-                Set your target autotrade equity. Setting to <b>$30.00</b> activates <b>Tier 1: Peak Win Rate (20x LSD)</b> with $11 margin, +20¢/+35¢ achievable targets, and a max 1 position cap.
+                Set your target autotrade equity. Setting to <b>$30.00</b> activates <b>Tier 1: Peak Win Rate (20x)</b> with $25 margin, +35¢/+55¢ targets, and a max 1 position cap.
               </p>
 
               <div>
@@ -924,7 +938,7 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
                 <span>20x LSD</span>
               </div>
               <div className="text-[10px] text-neutral-300 mt-0.5">Peak Win Rate Mode</div>
-              <div className="text-[9px] text-neutral-400">3% Risk Cap (-$0.90 max on $30) · Margin: $25 Collateral → $500 Buying Power (20x) · TP2 +0.55/0.85 ATR</div>
+              <div className="text-[9px] text-neutral-400">3% Risk Cap (-$0.90 max on $30) · Margin: $25 Collateral → $500 Buying Power (20x) · TP2 +$0.55/$0.70/$0.85 by tier</div>
             </div>
 
             <div className={`p-2 rounded border ${
@@ -1086,7 +1100,7 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
                   className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 transition-all flex items-center gap-1.5"
                 >
                   <Send className="w-3 h-3" />
-                  <span>Simulate Limit Order</span>
+                  <span>Send Test Signal</span>
                 </button>
                 {positions.length > 0 && (
                   <button
@@ -1160,10 +1174,11 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
                           ${p.margin.toFixed(2)} ({p.leverage}x)
                         </td>
                         <td className="py-2.5 text-emerald-400">
-                          +${(p.takeProfit - p.fillPrice).toFixed(2)} / +$0.55
+                          {p.tp1 != null ? `${p.side === 'Short' ? '−' : '+'}${p.tp1.toFixed(2)} / ` : ''}
+                          {(p.takeProfit - p.fillPrice) >= 0 ? '+' : ''}${(p.takeProfit - p.fillPrice).toFixed(2)}
                         </td>
                         <td className="py-2.5 text-red-400">
-                          -${(p.fillPrice - p.stopLoss).toFixed(2)}
+                          −${Math.abs(p.fillPrice - p.stopLoss).toFixed(2)}
                         </td>
                         <td className="py-2.5 text-right">
                           <button
@@ -1237,7 +1252,7 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
               <div className="bg-[#191a1c] border border-white/5 rounded-xl p-2.5">
                 <div className="text-[10px] text-neutral-400 uppercase font-semibold">Risk Floor Tier</div>
                 <div className="text-xs font-bold text-purple-300 mt-0.5 truncate">
-                  {balance < 100 ? 'Tier 1 (1% Cap -$0.30)' : balance < 250 ? 'Tier 2 (5% Cap -$5.00)' : 'Tier 3 (10% Cap -$25.00)'}
+                  {balance < 100 ? 'Tier 1 (3% Cap -$0.90)' : balance < 250 ? 'Tier 2 (5% Cap -$5.00)' : 'Tier 3 (10% Cap -$25.00)'}
                 </div>
               </div>
             </div>
@@ -1823,15 +1838,18 @@ export const AutoTradeJupiterView: React.FC<AutoTradeJupiterViewProps> = ({
             </p>
 
             <pre className="p-3 bg-neutral-950 rounded-xl border border-white/10 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap select-all">
-{`curl -X POST http://localhost:3001/signal \\
+{`curl -X POST /signal \\
   -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer $BOT_AUTH_TOKEN" \\
   -d '{
     "asset": "${currentAsset}",
     "direction": "buy",
     "price": ${solPrice.toFixed(2)},
     "entryOffset": 0.00,
     "candleMomentum": true,
-    "recommendedMargin": 25.00
+    "regime": "RANGE_BOUND_SUPPORT",
+    "adx": 25,
+    "consecutiveGreen5m": 2
   }'`}
             </pre>
           </div>
@@ -1947,12 +1965,12 @@ onTradeSettled(netPnlUsd);`}
             <div className="space-y-3 text-xs">
               <div className="flex items-center justify-between bg-neutral-900/60 p-3 rounded-xl border border-white/5">
                 <div>
-                  <span className="text-neutral-200 font-medium block">Leverage Cap &amp; LSD Floor</span>
+                  <span className="text-neutral-200 font-medium block">Leverage Cap</span>
                   <span className="text-[11px] text-neutral-400">
-                    Standard 40x on Devnet; Drops to 20x safety leverage below $22
+                    Max 60x reachable (20/35/50 base by tier + 10x boost)
                   </span>
                 </div>
-                <span className="font-mono text-emerald-400 font-bold">40x / 20x</span>
+                <span className="font-mono text-emerald-400 font-bold">60x max</span>
               </div>
 
               <div className="flex items-center justify-between bg-neutral-900/60 p-3 rounded-xl border border-white/5">

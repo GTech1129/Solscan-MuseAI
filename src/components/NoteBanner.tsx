@@ -11,7 +11,7 @@ export function NoteBanner() {
               SIMULATION MODEL
             </span>
             <strong className="text-neutral-200">Solana Price Generator:</strong>{' '}
-            Merton Jump-Diffusion with Poisson flash wicks (-2% to -6%), GARCH-lite
+            Merton Jump-Diffusion with Poisson flash wicks (-1.5% to -5%), GARCH-lite
             volatility clustering, and momentum autocorrelation.
           </div>
           <div>
@@ -19,9 +19,10 @@ export function NoteBanner() {
               DB ALIGNMENT
             </span>
             <strong className="text-neutral-200">Signal &amp; Execution:</strong>{' '}
-            Instant 1-bar execution edge (bypasses 2-bar lag), fee-neutralized TP1
-            (35¢) + regime-adaptive TP2 ($0.75/$1.10), 5m Fisher runner exit, and
-            symmetrical sit-outs in 100% Cash during FLASH_CRASH and MARKET_CHOP.
+            Canonical trigger (hooks + 2-bar 5m confirmation), fee-neutralized TP1
+            (35¢; 20¢ in chop) + regime-adaptive TP2 ($0.55/$0.70/$0.85), 5m Fisher
+            runner exit, chop traded at reduced size, and flash-crash sit-out in
+            100% Cash (no new positions either direction).
           </div>
           <div>
             <span className="inline-block px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 font-semibold text-[10px] tracking-wide mr-1.5 border border-purple-500/20">
@@ -30,9 +31,9 @@ export function NoteBanner() {
             <strong className="text-neutral-200">
               Compounding &amp; Emergency Brake:
             </strong>{' '}
-            Dynamic compounding (10%, 25%, 50%) when balance ≥ $22.00. Automatic
-            Leverage Scale-Down (LSD/DEB) locks margin to $11.00 @ 20x when balance &lt;
-            $22.00 to guarantee capital preservation above lockout.
+            Tier sizing by balance (T1 $25 @ 20x, T2 $50 @ 35x, T3 $100 @ 50x;
+            +10x server boost, max 60x), risk caps 3%/5%/10%, $10 lockout floor,
+            and a 2-loss circuit breaker (5-bar standby).
           </div>
         </div>
       </div>

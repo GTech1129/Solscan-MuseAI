@@ -60,13 +60,64 @@ export const Header: React.FC<HeaderProps> = ({
   onUpdatePortfolioBalance,
   openPositionsCount = 0,
   maxOpenPositions = 1,
-  activeTierName = 'Peak Win Rate (20x LSD)',
+  activeTierName = 'Peak Win Rate (20x)',
   currentRegime,
   onOpenExecutedTradesLedger,
 }) => {
   const [isEditingBalance, setIsEditingBalance] = React.useState<boolean>(false);
   const [balanceInput, setBalanceInput] = React.useState<string>(portfolioBalance.toString());
   const assetGlyph = currentAsset === 'SOL' ? '◎' : currentAsset === 'BTC' ? '₿' : 'Ξ';
+
+  // Resolved trading mode (Phase 1 scope correction): the header used to
+  // hardcode "Jupiter Devnet Auto-Trader" regardless of the real mode.
+  // It now reads /state.tradingMode (env-resolved, bot-service + jupiter
+  // agree) and refreshes every 30s. Falls back to "unknown" when the bot
+  // is unreachable — never a hardcoded network claim.
+  const [tradingMode, setTradingMode] = React.useState<{
+    network: string;
+    effectiveMode: string;
+    armed: boolean;
+    devnetForcedSimulate: boolean;
+  } | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    const fetchMode = async () => {
+      try {
+        const res = await fetch('/state', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const tm = data.tradingMode;
+        if (!cancelled && tm) {
+          setTradingMode({
+            network: tm.network,
+            effectiveMode: tm.effectiveMode,
+            armed: tm.armed,
+            devnetForcedSimulate: tm.devnetForcedSimulate,
+          });
+        }
+      } catch {
+        // Bot unreachable: keep the "unknown" fallback below.
+      }
+    };
+    fetchMode();
+    const timer = setInterval(fetchMode, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+  const modeLabel = tradingMode
+    ? `Jupiter ${tradingMode.network} · ${tradingMode.effectiveMode.toUpperCase()}${tradingMode.effectiveMode === 'live' ? (tradingMode.armed ? ' · ARMED' : ' · LOCKED') : ''}${tradingMode.devnetForcedSimulate ? ' (devnet forced from LIVE)' : ''}`
+    : 'Jupiter · mode unknown (bot unreachable)';
+  const modeColor = !tradingMode
+    ? 'text-neutral-400 border-white/10 bg-white/5'
+    : tradingMode.effectiveMode === 'live'
+    ? tradingMode.armed
+      ? 'text-rose-300 border-rose-500/40 bg-rose-500/10'
+      : 'text-amber-300 border-amber-500/40 bg-amber-500/10'
+    : tradingMode.effectiveMode === 'simulate'
+    ? 'text-amber-300 border-amber-500/40 bg-amber-500/10'
+    : 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10';
 
   return (
     <header className="border-b border-white/10 pb-4 mb-5 space-y-4">
@@ -236,7 +287,13 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
           <p className="text-xs text-neutral-400 mt-1 max-w-4xl leading-relaxed">
-            Real-Time Multi-Regime Solana Reversal Monitor, Jupiter Devnet Auto-Trader, and Backtest Lab
+            Real-Time Multi-Regime Solana Reversal Monitor, Jupiter Auto-Trader, and Backtest Lab
+          </p>
+          <p className="text-[11px] mt-1">
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono font-bold border ${modeColor}`}>
+              <span>TRADING MODE:</span>
+              <span>{modeLabel}</span>
+            </span>
           </p>
         </div>
 
@@ -391,7 +448,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-white/20">|</span>
               <div
                 className="flex items-center gap-1.5 cursor-help"
-                title="Tiered Risk Cap: Tier 1: 1% (-$0.30 on $30 bal) · Tier 2: 5% (-$5.00 on $100 bal) · Tier 3: 10% (-$25.00 on $250 bal)"
+                title="Tiered Risk Cap: Tier 1: 3% (-$0.90 on $30 bal) · Tier 2: 5% (-$5.00 on $100 bal) · Tier 3: 10% (-$25.00 on $250 bal)"
               >
                 <span>Hard Risk Cap:</span>
                 <strong className="text-purple-300 font-mono">
