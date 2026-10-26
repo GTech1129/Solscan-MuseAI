@@ -21,7 +21,9 @@ const {
   onTradeSettled,
   getAutoSwitcherState,
   resetCircuitBreaker,
+  getRiskGuardrailPolicy,
 } = require('./server_strategy_auto_switcher.cjs');
+const { getPriorityFeeConfig } = require('./priorityFees.cjs');
 
 // Official Jupiter Perpetuals Anchor Integration from public/jupiter.js
 let jupiter = null;
@@ -30,6 +32,41 @@ try {
   console.log('✅ [BOT SERVICE] Jupiter Perps Anchor module integrated successfully');
 } catch (err) {
   console.warn('⚠️ [BOT SERVICE] Could not load Jupiter Perps module:', err.message);
+}
+
+// Unified trading-mode resolution (Phase 1 scope correction).
+// The CANONICAL implementation lives in public/jupiter.js
+// (resolveTradingMode); bot-service uses that exact object so both halves
+// of the system can never disagree about network or mode again. The local
+// fallback below runs ONLY if the Jupiter module failed to load, mirrors
+// the canonical ladder exactly, and warns loudly — mode must never
+// silently default to something the env did not ask for.
+// Ladder (fail closed): PAPER_TRADING=false + SIMULATE_TX=false -> live;
+// PAPER_TRADING=false + anything else -> simulate; otherwise paper.
+// Network: SOLANA_NETWORK, else DEVNET=true -> devnet, else mainnet-beta.
+// Devnet + live -> effective simulate (Jupiter perps addresses are mainnet).
+function fallbackResolveTradingMode() {
+  const e = process.env;
+  let network = 'mainnet-beta';
+  if (e.SOLANA_NETWORK === 'mainnet-beta' || e.SOLANA_NETWORK === 'devnet') network = e.SOLANA_NETWORK;
+  else if (e.DEVNET === 'true') network = 'devnet';
+  const paperRaw = e.PAPER_TRADING !== undefined ? e.PAPER_TRADING : e.PAPER_TRADE;
+  const simRaw = e.SIMULATE_TX !== undefined ? e.SIMULATE_TX : e.DRY_RUN;
+  let configuredMode = 'paper';
+  if (paperRaw === 'false') configuredMode = (simRaw === 'false') ? 'live' : 'simulate';
+  let effectiveMode = configuredMode;
+  let devnetForcedSimulate = false;
+  if (network === 'devnet' && configuredMode === 'live') {
+    effectiveMode = 'simulate';
+    devnetForcedSimulate = true;
+  }
+  const rpcUrl = e.SOLANA_RPC || e.HELIUS_RPC_URL ||
+    (network === 'mainnet-beta' ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com');
+  return { network, rpcUrl, configuredMode, effectiveMode, devnetForcedSimulate };
+}
+const TRADING_MODE = (jupiter && jupiter.TRADING_MODE) || fallbackResolveTradingMode();
+if (!jupiter) {
+  console.warn('⚠️ [TRADING MODE] Jupiter module unavailable; using fallback mode resolution (must mirror jupiter.js).');
 }
 
 const POSITIONS_FILE = path.resolve(__dirname, 'public', 'paper-positions.json');
@@ -80,10 +117,10 @@ function fetchBinanceTicker(symbol, cb) {
               return safeCb(null, formatted);
             }
             if (nextTry) return nextTry();
-            return safeCb(null, { symbol: cleanSymbol, lastPrice: "119.05", priceChangePercent: "0.05" });
+            return safeCb(new Error("All price sources failed for " + cleanSymbol), null);
           } catch (e) {
             if (nextTry) return nextTry();
-            return safeCb(null, { symbol: cleanSymbol, lastPrice: "119.05", priceChangePercent: "0.05" });
+            return safeCb(new Error("All price sources failed for " + cleanSymbol), null);
           }
         });
       });
@@ -92,7 +129,7 @@ function fetchBinanceTicker(symbol, cb) {
     req.on('error', () => {
       finish(() => {
         if (nextTry) return nextTry();
-        return safeCb(null, { symbol: cleanSymbol, lastPrice: "119.05", priceChangePercent: "0.05" });
+        return safeCb(new Error("All price sources failed for " + cleanSymbol), null);
       });
     });
 
@@ -100,7 +137,7 @@ function fetchBinanceTicker(symbol, cb) {
       finish(() => {
         try { req.destroy(); } catch (_) {}
         if (nextTry) return nextTry();
-        return safeCb(null, { symbol: cleanSymbol, lastPrice: "119.05", priceChangePercent: "0.05" });
+        return safeCb(new Error("All price sources failed for " + cleanSymbol), null);
       });
     });
   };
@@ -117,53 +154,10 @@ function fetchBinanceTicker(symbol, cb) {
 // Binance Klines in-memory cache & fallback generator
 const klineCache = new Map();
 
-function generateSyntheticKlines(symbol, interval, limit) {
-  let basePrice = 119.05;
-  if (symbol.includes('BTC')) basePrice = 67500;
-  if (symbol.includes('ETH')) basePrice = 2550;
-  if (symbol.includes('BNB')) basePrice = 580;
-  if (symbol.includes('XRP')) basePrice = 0.58;
-  if (state.marketPrice && symbol.includes('SOL')) basePrice = state.marketPrice;
-
-  const count = Math.min(Math.max(parseInt(limit, 10) || 100, 20), 500);
-  const now = Date.now();
-  let stepMs = 15 * 60 * 1000;
-  if (interval === '5m') stepMs = 5 * 60 * 1000;
-  if (interval === '30m') stepMs = 30 * 60 * 1000;
-  if (interval === '1h') stepMs = 60 * 60 * 1000;
-  if (interval === '4h') stepMs = 4 * 60 * 60 * 1000;
-  if (interval === '1d') stepMs = 24 * 60 * 60 * 1000;
-
-  const result = [];
-  let curPrice = basePrice * 0.97;
-  const startTime = now - count * stepMs;
-
-  for (let i = 0; i < count; i++) {
-    const t = startTime + i * stepMs;
-    const change = (Math.random() - 0.48) * (basePrice * 0.006);
-    const open = curPrice;
-    const close = Math.max(open + change, 1);
-    const high = Math.max(open, close) + Math.random() * (basePrice * 0.003);
-    const low = Math.min(open, close) - Math.random() * (basePrice * 0.003);
-    const vol = Math.floor(Math.random() * 40000 + 10000);
-    curPrice = close;
-    result.push([
-      t,
-      open.toFixed(2),
-      high.toFixed(2),
-      low.toFixed(2),
-      close.toFixed(2),
-      vol.toFixed(2),
-      t + stepMs - 1,
-      (vol * close).toFixed(2),
-      1000,
-      (vol * 0.5).toFixed(2),
-      (vol * close * 0.5).toFixed(2),
-      "0"
-    ]);
-  }
-  return result;
-}
+// NOTE (P0 safety): the synthetic-klines generator was intentionally REMOVED.
+// A failed live feed must now surface as an error (HTTP 500 / feed-offline state),
+// never as invented candles. Backtests use src/engine/generator.ts, which is
+// explicitly synthetic and never touches live trading paths.
 
 function fetchBinanceKlines(symbol, interval, limit, cb) {
   let cbCalled = false;
@@ -206,10 +200,10 @@ function fetchBinanceKlines(symbol, interval, limit, cb) {
               }
             }
             if (nextTry) return nextTry();
-            return safeCb(null, generateSyntheticKlines(symbol, interval, cleanLimit));
+            return safeCb(new Error("All Binance klines sources failed for " + symbol), null);
           } catch (e) {
             if (nextTry) return nextTry();
-            return safeCb(null, generateSyntheticKlines(symbol, interval, cleanLimit));
+            return safeCb(new Error("All Binance klines sources failed for " + symbol), null);
           }
         });
       });
@@ -219,14 +213,14 @@ function fetchBinanceKlines(symbol, interval, limit, cb) {
       finish(() => {
         try { req.destroy(); } catch (_) {}
         if (nextTry) return nextTry();
-        return safeCb(null, generateSyntheticKlines(symbol, interval, cleanLimit));
+        return safeCb(new Error("All Binance klines sources failed for " + symbol), null);
       });
     });
 
     req.on('error', () => {
       finish(() => {
         if (nextTry) return nextTry();
-        return safeCb(null, generateSyntheticKlines(symbol, interval, cleanLimit));
+        return safeCb(new Error("All Binance klines sources failed for " + symbol), null);
       });
     });
   };
@@ -235,13 +229,13 @@ function fetchBinanceKlines(symbol, interval, limit, cb) {
 }
 
 // Global Bot & Trade State
-const defaultRpc = process.env.SOLANA_RPC || process.env.HELIUS_RPC_URL || (process.env.SOLANA_NETWORK === 'mainnet-beta' ? 'https://api.mainnet-beta.solana.com' : 'https://api.devnet.solana.com');
-const defaultNetwork = process.env.SOLANA_NETWORK || (defaultRpc.includes('mainnet') ? 'mainnet-beta' : 'devnet');
-
+// Network/RPC come ONLY from the unified env resolution — never from a
+// persisted file, a request payload, or a UI switch (those paths used to
+// disagree with jupiter.js, which is fixed at module load).
 const state = {
-  network: defaultNetwork,
-  rpcUrl: defaultRpc,
-  executionMode: 'simulate', // 'simulate' | 'live_onchain'
+  network: TRADING_MODE.network,
+  rpcUrl: TRADING_MODE.rpcUrl,
+  executionMode: 'simulate', // 'simulate' (disarmed) | 'live_onchain' (armed via safety toggle / /mode, live env only)
   safetyToggle: {
     enabled: false,
     unlockedAt: null,
@@ -271,34 +265,8 @@ const state = {
   marketIndicators: null,
 };
 
-// Seed with the initial order from user prompt
-const INITIAL_PDA = 'FxzpPjspistGY23Q2RnnWWRJxRgbn35cf8bV3oKBXC4r';
-state.orders[INITIAL_PDA] = {
-  id: 'ord_init_001',
-  requestPDA: INITIAL_PDA,
-  positionPDA: '3ao1Q66cEr3fyd1eXDq79QE9nkRTzxdtP3wmJTJfuYKW',
-  asset: 'SOL',
-  side: 'Long',
-  entryPrice: 116.5625,
-  currentPrice: 116.65,
-  stopLoss: 116.0375,
-  takeProfit: 117.3125,
-  margin: 25.00, // $25.00 committed collateral from $30 wallet
-  leverage: 20,
-  notional: 500.00, // Position Size (Notional) = $25 * 20x = $500.00
-  tokens: 4.2895, // ~4.29 SOL
-  maxDollarLoss: 0.30,
-  status: 'placed', // 'placed' | 'pending_keeper' | 'filled' | 'closed' | 'cancelled'
-  placedAt: Date.now() - 35000,
-  filledAt: null,
-  closedAt: null,
-  isSimulated: true,
-  pnl: 0.0,
-  pnlPercent: 0.0,
-  keeperStatus: 'Waiting for keeper match on-chain / price cross',
-  closeReason: null,
-  exitPrice: null,
-};
+// No seeded orders: the ledger starts empty. (P0 integrity: the old
+// ord_init_001 seed order with a fabricated PDA has been removed.)
 
 // Try loading persisted orders and wallet state
 try {
@@ -309,77 +277,12 @@ try {
       if (parsed.orders && Object.keys(parsed.orders).length > 0) {
         Object.assign(state.orders, parsed.orders);
       }
-      if (Array.isArray(parsed.trades) && parsed.trades.length > 0) {
-        state.trades = parsed.trades.map(t => {
-          if (t && (t.margin === 3 || t.margin === 3.0 || t.size === 3 || t.margin === 10.50)) {
-            t.margin = 600.00;
-            t.size = 600.00;
-            t.pnl = -0.30;
-            t.returnPct = -2.86;
-            t.pnlPercent = -2.86;
-          }
-          return t;
-        });
-      } else {
-        state.trades = [
-          {
-            tradeId: 'TRD-001',
-            id: 'TRD-001',
-            n: 1,
-            dateTime: '2026-10-03 14:15:22 UTC',
-            timestampEntry: '2026-10-03T14:10:00.000Z',
-            timestampExit: '2026-10-03T14:15:22.000Z',
-            regime: 'Range Bound / Support',
-            side: 'Long',
-            type: 'SL',
-            asset: 'SOL',
-            entry: 119.46,
-            entryPrice: 119.46,
-            exit: 119.32,
-            exitPrice: 119.32,
-            margin: 600.00,
-            size: 600.00,
-            lev: 20,
-            leverage: 20,
-            pnl: -0.30,
-            returnPct: -2.86,
-            pnlPercent: -2.86,
-            fee: 0.05,
-            balance: 29.65,
-            executionMode: 'AUTOTRADE_BOT',
-            status: 'closed',
-            reason: 'STOP_LOSS_HIT'
-          },
-          {
-            tradeId: 'TRD-002',
-            id: 'TRD-002',
-            n: 2,
-            dateTime: '2026-10-03 14:48:10 UTC',
-            timestampEntry: '2026-10-03T14:35:00.000Z',
-            timestampExit: '2026-10-03T14:48:10.000Z',
-            regime: 'Range Bound / Support',
-            side: 'Short',
-            type: 'SL',
-            asset: 'SOL',
-            entry: 119.67,
-            entryPrice: 119.67,
-            exit: 119.81,
-            exitPrice: 119.81,
-            margin: 600.00,
-            size: 600.00,
-            lev: 20,
-            leverage: 20,
-            pnl: -0.30,
-            returnPct: -2.86,
-            pnlPercent: -2.86,
-            fee: 0.05,
-            balance: 29.30,
-            executionMode: 'AUTOTRADE_BOT',
-            status: 'closed',
-            reason: 'STOP_LOSS_HIT'
-          }
-        ];
+      if (Array.isArray(parsed.trades)) {
+        state.trades = parsed.trades;
       }
+      // No seeded trades and no margin rewriting: an empty ledger is honest.
+      // (P0 integrity: the old TRD-001/TRD-002 injection and the
+      // margin -> 600.00 / pnl -> -0.30 rewrite have been removed.)
       if (typeof parsed.balance === 'number') state.balance = parsed.balance;
       if (typeof parsed.isCustomBalanceSet === 'boolean') state.isCustomBalanceSet = parsed.isCustomBalanceSet;
       if (typeof parsed.dailyPnL === 'number') state.dailyPnL = parsed.dailyPnL;
@@ -397,6 +300,32 @@ try {
 } catch (e) {
   console.warn('[BOT SERVICE] Could not read paper-positions.json:', e.message);
 }
+
+// P0 unification: env is the authority over persisted state. A file left
+// by an older run must never override the env-resolved network, and a
+// persisted ARMED state must never survive into a paper/simulate process.
+state.network = TRADING_MODE.network;
+state.rpcUrl = TRADING_MODE.rpcUrl;
+if (TRADING_MODE.effectiveMode !== 'live') {
+  state.executionMode = 'simulate';
+  state.safetyToggle.enabled = false;
+  state.safetyToggle.unlockedAt = null;
+}
+
+// Startup mode line: the single unambiguous statement of what this
+// process will do. Same mode as jupiter.js's line. No secrets here —
+// only the mode, the network, and the wallet PUBLIC key (if configured).
+try {
+  const _startupKp = loadActiveKeypair();
+  const _walletLabel = (_startupKp && _startupKp.publicKey) ? _startupKp.publicKey : 'none';
+  const _broadcast = TRADING_MODE.effectiveMode === 'live'
+    ? (state.safetyToggle.enabled ? 'ARMED (safety toggle unlocked)' : 'LOCKED (safety toggle not armed)')
+    : 'NO';
+  console.log(`🚦 [TRADING MODE] network=${TRADING_MODE.network} | mode=${TRADING_MODE.effectiveMode.toUpperCase()}${TRADING_MODE.devnetForcedSimulate ? ' (devnet forced from configured LIVE — Jupiter perps addresses are mainnet)' : ''} | broadcast=${_broadcast} | wallet=${_walletLabel} | env: PAPER_TRADING=${process.env.PAPER_TRADING ?? 'unset'} SIMULATE_TX=${process.env.SIMULATE_TX ?? 'unset'} SOLANA_NETWORK=${process.env.SOLANA_NETWORK ?? 'unset'}`);
+  if (TRADING_MODE.devnetForcedSimulate) {
+    console.warn('⚠️ [TRADING MODE] SOLANA_NETWORK=devnet with live env flags: devnet has no Jupiter perps deployment. Effective mode is SIMULATE. Use mainnet-beta for tiny live tests.');
+  }
+} catch (_) { /* startup log must never crash the process */ }
 
 function persistState() {
   try {
@@ -426,125 +355,178 @@ function persistState() {
   }
 }
 
-// AES-256-CBC Encryption & Decryption Helpers
-const AES_ALGORITHM = 'aes-256-cbc';
-const DEFAULT_ENCRYPTION_SECRET = process.env.WALLET_ENCRYPTION_KEY || 'jupiter-perpetuals-aes256-secret-32b!'; // 32-byte key
-
-function deriveKey(secret) {
-  return crypto.createHash('sha256').update(String(secret || DEFAULT_ENCRYPTION_SECRET)).digest();
+// Wallet encryption helpers (P0 safety, Phase 1).
+// - New encryptions use AES-256-GCM (authenticated: tampering is detected).
+// - The old AES-256-CBC format can still be READ for migration, but only
+//   with WALLET_ENCRYPTION_KEY from the environment. There is NO hardcoded
+//   fallback secret anymore: without the env key, wallet encryption and
+//   decryption fail closed with a clear error instead of silently using a
+//   secret that ships in the repo.
+// - Plain (unencrypted) 64-byte arrays are labeled 'PLAINTEXT' — never as
+//   an encryption scheme.
+function requireEncryptionKey() {
+  const secret = process.env.WALLET_ENCRYPTION_KEY;
+  if (!secret || !secret.trim()) {
+    throw new Error('WALLET_ENCRYPTION_KEY is not set. Refusing wallet encryption/decryption without an explicit key from the environment.');
+  }
+  return crypto.createHash('sha256').update(secret).digest();
 }
 
-function encryptAES256CBC(plainText, secret) {
-  const key = deriveKey(secret);
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(AES_ALGORITHM, key, iv);
-  let encrypted = cipher.update(typeof plainText === 'string' ? plainText : JSON.stringify(plainText), 'utf8', 'hex');
+function encryptWalletPayload(plainText) {
+  const key = requireEncryptionKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const data = typeof plainText === 'string' ? plainText : JSON.stringify(plainText);
+  let encrypted = cipher.update(data, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   return {
     encrypted: true,
-    cipher: AES_ALGORITHM,
+    cipher: 'aes-256-gcm',
     iv: iv.toString('hex'),
+    authTag: cipher.getAuthTag().toString('hex'),
     ciphertext: encrypted,
   };
 }
 
-function decryptAES256CBC(encryptedPayload, secret) {
-  const key = deriveKey(secret);
-  const iv = Buffer.from(encryptedPayload.iv, 'hex');
-  const decipher = crypto.createDecipheriv(AES_ALGORITHM, key, iv);
-  let decrypted = decipher.update(encryptedPayload.ciphertext, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+function decryptWalletPayload(encryptedPayload) {
+  const key = requireEncryptionKey();
+  if (encryptedPayload.cipher === 'aes-256-gcm') {
+    if (!encryptedPayload.authTag) throw new Error('GCM payload missing authTag.');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(encryptedPayload.iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(encryptedPayload.authTag, 'hex'));
+    let out = decipher.update(encryptedPayload.ciphertext, 'hex', 'utf8');
+    out += decipher.final('utf8');
+    return out;
+  }
+  if (encryptedPayload.cipher === 'aes-256-cbc') {
+    // Legacy read-only path for wallets encrypted before Phase 1.
+    // No new CBC encryptions are ever created.
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(encryptedPayload.iv, 'hex'));
+    let out = decipher.update(encryptedPayload.ciphertext, 'hex', 'utf8');
+    out += decipher.final('utf8');
+    return out;
+  }
+  throw new Error(`Unsupported wallet cipher: ${encryptedPayload.cipher || 'unknown'}`);
 }
 
-// Helper to check and load keypair (supports AES-256-CBC encrypted or plain keypairs)
+// Helper to check and load keypair.
+// P0 safety (Phase 1): the audit MUST see the same key Jupiter signs with.
+// Priority: (1) env key value (MAINNET_PRIVATE_KEY / SOLANA_PRIVATE_KEY —
+// the exact keys jupiter.js getKeypair() checks first), (2) KEYPAIR_PATH
+// file, (3) network-aware wallet files in the project root. Wallet files
+// under public/ are NEVER read (that directory is web-served).
+// NOTHING is auto-generated here: if no key is configured, this returns
+// null and the caller must handle "no signing key" explicitly. Wallet
+// generation happens only on an explicit user action (/wallet-config).
+function parseEnvKeypair(value) {
+  const trimmed = String(value).trim();
+  if (trimmed.startsWith('[')) {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed) && parsed.length === 64) return Keypair.fromSecretKey(Uint8Array.from(parsed));
+    throw new Error('Env key JSON array must be exactly 64 bytes.');
+  }
+  const decoded = bs58.decode(trimmed);
+  if (decoded.length === 64) return Keypair.fromSecretKey(decoded);
+  if (decoded.length === 32) return Keypair.fromSeed(decoded);
+  throw new Error(`Env key must decode to 64 bytes (or a 32-byte seed); got ${decoded.length}.`);
+}
+
 function loadActiveKeypair() {
-  const candidates = [
-    path.resolve(__dirname, 'wallet-devnet.json'),
-    path.resolve(__dirname, 'wallet.json'),
-    path.resolve(__dirname, 'public', 'wallet-devnet.json'),
-    path.resolve(__dirname, 'public', 'wallet.json'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) {
+  // 1. Env key value (same source jupiter.js signs with)
+  for (const envName of ['MAINNET_PRIVATE_KEY', 'SOLANA_PRIVATE_KEY']) {
+    const v = process.env[envName];
+    if (v && v.trim()) {
       try {
-        const raw = JSON.parse(fs.readFileSync(c, 'utf8'));
-        let secretKeyArray = null;
-
-        // Check if AES-256-CBC encrypted
-        if (raw && raw.encrypted === true && raw.ciphertext && raw.iv) {
-          try {
-            const decryptedStr = decryptAES256CBC(raw);
-            const parsed = JSON.parse(decryptedStr);
-            if (Array.isArray(parsed) && parsed.length === 64) {
-              secretKeyArray = parsed;
-              state.wallet.encryption = 'AES-256-CBC';
-            }
-          } catch (decErr) {
-            state.wallet.error = 'AES-256-CBC decryption failed: ' + decErr.message;
-            continue;
-          }
-        } else if (Array.isArray(raw) && raw.length === 64) {
-          secretKeyArray = raw;
-          state.wallet.encryption = 'AES-256-CBC (Ready)';
-        }
-
-        if (secretKeyArray && secretKeyArray.length === 64) {
-          const kp = Keypair.fromSecretKey(Uint8Array.from(secretKeyArray));
-          state.wallet.isConfigured = true;
-          state.wallet.publicKey = kp.publicKey.toBase58();
-          state.wallet.path = path.basename(c);
-          state.wallet.encryption = 'AES-256-CBC';
-          state.wallet.error = null;
-          return { keypair: kp, publicKey: kp.publicKey.toBase58(), path: c };
-        }
+        const kp = parseEnvKeypair(v);
+        state.wallet.isConfigured = true;
+        state.wallet.publicKey = kp.publicKey.toBase58();
+        state.wallet.path = `env:${envName}`;
+        state.wallet.encryption = 'ENV_SECRET';
+        state.wallet.error = null;
+        return { keypair: kp, publicKey: kp.publicKey.toBase58(), path: `env:${envName}` };
       } catch (err) {
-        state.wallet.error = 'Corrupt keypair file: ' + err.message;
+        state.wallet.error = `Invalid ${envName}: ${err.message}`;
       }
     }
   }
-  // Auto-provision default AES-256-CBC encrypted devnet wallet if none exists
-  try {
-    const kp = Keypair.generate();
-    const secretKeyArray = Array.from(kp.secretKey);
-    const targetFile = 'wallet-devnet.json';
-    const targetPath = path.resolve(__dirname, targetFile);
-    const encryptedPayload = encryptAES256CBC(secretKeyArray);
-    fs.writeFileSync(targetPath, JSON.stringify(encryptedPayload, null, 2), 'utf8');
-    state.wallet.isConfigured = true;
-    state.wallet.publicKey = kp.publicKey.toBase58();
-    state.wallet.path = targetFile;
-    state.wallet.encryption = 'AES-256-CBC';
-    state.wallet.error = null;
-    return { keypair: kp, publicKey: kp.publicKey.toBase58(), path: targetPath };
-  } catch (genErr) {
-    state.wallet.isConfigured = false;
-    state.wallet.publicKey = null;
-    state.wallet.path = null;
-    state.wallet.encryption = 'AES-256-CBC';
-    return null;
+
+  // 2. KEYPAIR_PATH file, then network-aware root wallet files
+  const candidates = [];
+  if (process.env.KEYPAIR_PATH) candidates.push(path.resolve(process.env.KEYPAIR_PATH));
+  if (state.network === 'mainnet-beta') {
+    candidates.push(path.resolve(__dirname, 'wallet.json'), path.resolve(__dirname, 'wallet-devnet.json'));
+  } else {
+    candidates.push(path.resolve(__dirname, 'wallet-devnet.json'), path.resolve(__dirname, 'wallet.json'));
   }
+  for (const c of candidates) {
+    if (!c || !fs.existsSync(c)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(c, 'utf8'));
+      let secretKeyArray = null;
+      let label = 'PLAINTEXT';
+
+      if (raw && raw.encrypted === true && raw.ciphertext && raw.iv) {
+        try {
+          const decryptedStr = decryptWalletPayload(raw);
+          const parsed = JSON.parse(decryptedStr);
+          if (Array.isArray(parsed) && parsed.length === 64) {
+            secretKeyArray = parsed;
+            label = raw.cipher === 'aes-256-gcm' ? 'AES-256-GCM' : 'AES-256-CBC (legacy)';
+          }
+        } catch (decErr) {
+          state.wallet.error = `Wallet decryption failed for ${path.basename(c)}: ${decErr.message}`;
+          continue;
+        }
+      } else if (Array.isArray(raw) && raw.length === 64) {
+        secretKeyArray = raw;
+        label = 'PLAINTEXT';
+      }
+
+      if (secretKeyArray && secretKeyArray.length === 64) {
+        const kp = Keypair.fromSecretKey(Uint8Array.from(secretKeyArray));
+        state.wallet.isConfigured = true;
+        state.wallet.publicKey = kp.publicKey.toBase58();
+        state.wallet.path = path.basename(c);
+        state.wallet.encryption = label;
+        state.wallet.error = null;
+        return { keypair: kp, publicKey: kp.publicKey.toBase58(), path: c };
+      }
+    } catch (err) {
+      state.wallet.error = 'Corrupt keypair file: ' + err.message;
+    }
+  }
+
+  // 3. No key configured: report it, generate NOTHING.
+  state.wallet.isConfigured = false;
+  state.wallet.publicKey = null;
+  state.wallet.path = null;
+  state.wallet.encryption = null;
+  if (!state.wallet.error) {
+    state.wallet.error = 'No signing key configured. Set MAINNET_PRIVATE_KEY/SOLANA_PRIVATE_KEY or KEYPAIR_PATH, or import/generate a wallet explicitly.';
+  }
+  return null;
 }
 
-// Generate a testing keypair (stored with AES-256-CBC encryption)
+// Generate a testing keypair (stored with AES-256-GCM encryption).
+// Explicit user action only — nothing auto-generates a wallet anymore.
 function generateTestingKeypair(network = 'devnet') {
   const kp = Keypair.generate();
   const secretKeyArray = Array.from(kp.secretKey);
   const targetFile = network === 'mainnet-beta' ? 'wallet.json' : 'wallet-devnet.json';
   const targetPath = path.resolve(__dirname, targetFile);
 
-  // Encrypt with AES-256-CBC
-  const encryptedPayload = encryptAES256CBC(secretKeyArray);
+  // Encrypt with AES-256-GCM (requires WALLET_ENCRYPTION_KEY from env)
+  const encryptedPayload = encryptWalletPayload(secretKeyArray);
   fs.writeFileSync(targetPath, JSON.stringify(encryptedPayload, null, 2), 'utf8');
   loadActiveKeypair();
   return {
     publicKey: kp.publicKey.toBase58(),
     path: targetFile,
-    encryption: 'AES-256-CBC',
+    encryption: 'AES-256-GCM',
   };
 }
 
-// Save imported keypair (stored with AES-256-CBC encryption)
+// Save imported keypair (stored with AES-256-GCM encryption)
 function saveImportedKeypair(input, network = 'devnet') {
   let secretBytes = null;
   if (Array.isArray(input) && input.length === 64) {
@@ -577,14 +559,14 @@ function saveImportedKeypair(input, network = 'devnet') {
   const targetFile = network === 'mainnet-beta' ? 'wallet.json' : 'wallet-devnet.json';
   const targetPath = path.resolve(__dirname, targetFile);
 
-  // Encrypt with AES-256-CBC
-  const encryptedPayload = encryptAES256CBC(Array.from(secretBytes));
+  // Encrypt with AES-256-GCM (requires WALLET_ENCRYPTION_KEY from env)
+  const encryptedPayload = encryptWalletPayload(Array.from(secretBytes));
   fs.writeFileSync(targetPath, JSON.stringify(encryptedPayload, null, 2), 'utf8');
   loadActiveKeypair();
   return {
     publicKey: kp.publicKey.toBase58(),
     path: targetFile,
-    encryption: 'AES-256-CBC',
+    encryption: 'AES-256-GCM',
   };
 }
 
@@ -632,13 +614,19 @@ async function auditWalletAndSafety() {
       // When in live_onchain mode or real wallet, calculate live portfolio equity in USD
       // and dynamically sync to state.balance so the Auto-Preset Switcher selects the correct tier!
       if (state.executionMode === 'live_onchain' || (state.network === 'mainnet-beta' && (solBalance > 0 || usdcBalance > 0))) {
-        const solPriceUsd = state.marketPrice || 119.05;
-        // Keep 0.015 SOL aside for transaction fees; remaining SOL value + USDC = tradeable equity
-        const tradeableSol = Math.max(0, solBalance - 0.015);
-        const liveEquity = parseFloat((usdcBalance + (tradeableSol * solPriceUsd)).toFixed(2));
-        if (liveEquity > 0) {
-          state.balance = liveEquity;
-          console.log(`[REAL WALLET SYNC] Equity: $${liveEquity} (${usdcBalance} USDC + ${solBalance} SOL) -> Auto-Preset Switcher Active`);
+        // P0 safety: never value a wallet from a fallback price. If there is
+        // no fresh market price, skip the sync entirely (balance stays as set).
+        const solPriceUsd = (typeof state.marketPrice === 'number' && state.marketPrice > 0) ? state.marketPrice : null;
+        if (solPriceUsd === null) {
+          console.warn('[REAL WALLET SYNC] Skipped: no fresh market price available; balance left unchanged.');
+        } else {
+          // Keep 0.015 SOL aside for transaction fees; remaining SOL value + USDC = tradeable equity
+          const tradeableSol = Math.max(0, solBalance - 0.015);
+          const liveEquity = parseFloat((usdcBalance + (tradeableSol * solPriceUsd)).toFixed(2));
+          if (liveEquity > 0) {
+            state.balance = liveEquity;
+            console.log(`[REAL WALLET SYNC] Equity: $${liveEquity} (${usdcBalance} USDC + ${solBalance} SOL) -> Auto-Preset Switcher Active`);
+          }
         }
       }
       state.wallet.lastChecked = Date.now();
@@ -671,11 +659,15 @@ async function auditWalletAndSafety() {
       detail: rpcHealthy ? `${latencyMs}ms (Slot #${slot})` : 'Unreachable or degraded',
     },
     {
+      // P0 safety: this condition used to be hardcoded `passed: true` with
+      // false copy (40x / 1.5x / $30). It now runs the real policy check
+      // computed from the tier table; if any tier violates the bounds,
+      // the gate fails and live trading cannot arm.
       id: 'guardrails',
-      title: 'Risk Guardrails Active',
-      description: 'Max 40x leverage cap, hard 1.5x ATR stop-loss, and $30 margin limit per order.',
-      passed: true,
-      detail: 'Leverage: 40x | StopLoss: 1.5x ATR | Margin: $30',
+      title: 'Risk Guardrails Active (verified from tier table)',
+      description: 'Max reachable leverage, stop-loss coefficients, tier margins, and risk caps are within declared bounds.',
+      passed: getRiskGuardrailPolicy().passed,
+      detail: getRiskGuardrailPolicy().detail,
     },
     {
       id: 'circuit_breaker',
@@ -796,7 +788,14 @@ function updateMarketPrice(asset, price) {
 
       // 2. If filled, manage active trade (Early Bank 70%, Scalable Risk Caps, Quick Chandelier)
       if (ord.status === 'filled') {
+        // Both extremes are tracked: highestPrice is the FAVORABLE
+        // extreme for longs (and adverse for shorts), lowestPrice is
+        // the FAVORABLE extreme for shorts. The chandelier must trail
+        // off the favorable extreme — the old code used highestPrice
+        // for both sides, so the short chandelier trailed off the
+        // adverse extreme and could only loosen the stop.
         ord.highestPrice = Math.max(ord.highestPrice || ord.entryPrice, price);
+        ord.lowestPrice = Math.min(ord.lowestPrice || ord.entryPrice, price);
         const priceGain = ord.side === 'Long' ? price - ord.entryPrice : ord.entryPrice - price;
         const barsHeld = Math.floor((Date.now() - (ord.filledAt || Date.now())) / (15 * 60 * 1000));
 
@@ -824,7 +823,7 @@ function updateMarketPrice(asset, price) {
           const chandelierOffset = 0.8 * curATR;
           const chandelierSL = ord.side === 'Long'
             ? parseFloat((ord.highestPrice - chandelierOffset).toFixed(4))
-            : parseFloat((ord.highestPrice + chandelierOffset).toFixed(4));
+            : parseFloat(((ord.lowestPrice || ord.entryPrice) + chandelierOffset).toFixed(4));
 
           if (ord.side === 'Long' && chandelierSL > ord.stopLoss) {
             ord.stopLoss = chandelierSL;
@@ -833,7 +832,7 @@ function updateMarketPrice(asset, price) {
           } else if (ord.side === 'Short' && chandelierSL < ord.stopLoss) {
             ord.stopLoss = chandelierSL;
             ord.isChandelierRatchet = true;
-            ord.keeperStatus = `[Quick Change Chandelier] Signal flipped to ${liveSig.toUpperCase()} before TP1: Engaged 0.8× ATR Chandelier Stop @ $${ord.stopLoss} above peak $${ord.highestPrice.toFixed(2)}`;
+            ord.keeperStatus = `[Quick Change Chandelier] Signal flipped to ${liveSig.toUpperCase()} before TP1: Engaged 0.8× ATR Chandelier Stop @ $${ord.stopLoss} above favorable low $${(ord.lowestPrice || ord.entryPrice).toFixed(2)}`;
           }
         }
 
@@ -848,7 +847,7 @@ function updateMarketPrice(asset, price) {
           ord.momentumStall ||
           (state.marketIndicators && (state.marketIndicators.fisher5mBearishCross || state.marketIndicators.fisher5mUp === false || state.marketIndicators.cciUp === false)) ||
           (ord.side === 'Long' && ord.highestPrice > ord.entryPrice && price <= (ord.highestPrice - 0.03)) ||
-          (ord.side === 'Short' && ord.highestPrice < ord.entryPrice && price >= (ord.highestPrice + 0.03))
+          (ord.side === 'Short' && (ord.lowestPrice || ord.entryPrice) < ord.entryPrice && price >= ((ord.lowestPrice || ord.entryPrice) + 0.03))
         );
 
         if (!ord.earlyBankHit && !ord.tp1Hit && progressToTp1 >= 0.70 && momentumStalled && priceGain > 0) {
@@ -881,12 +880,17 @@ function updateMarketPrice(asset, price) {
           }
         }
 
-        // 3-Bar Stagnation Exit Rule:
-        // Automatically exit positions if they fail to reach TP1 within 3 bars (~45 min)
-        // while moving adverse by more than -0.30 ATR (~$0.15)
+        // Stagnation Exit Rule (Phase 2: chop trades exit faster):
+        // Standard: exit if TP1 is not reached within 3 bars (~45 min)
+        // while moving adverse by more than $0.15. Chop trades (half
+        // size, tighter targets) exit after 2 bars / $0.10 adverse —
+        // chop mean-reverts, so a chop trade that has not worked in
+        // 30 minutes is a stale trade, not a developing one.
         const adversePrice = ord.side === 'Long' ? ord.entryPrice - price : price - ord.entryPrice;
-        if (!ord.tp1Hit && !ord.earlyBankHit && barsHeld >= 3 && adversePrice > 0.15) {
-          closeOrder(pda, price, 'STAGNATION_EXIT (Failed TP1 in 3 bars with adverse move)');
+        const stagBars = ord.isChop ? 2 : 3;
+        const stagAdverse = ord.isChop ? 0.10 : 0.15;
+        if (!ord.tp1Hit && !ord.earlyBankHit && barsHeld >= stagBars && adversePrice > stagAdverse) {
+          closeOrder(pda, price, `STAGNATION_EXIT (Failed TP1 in ${stagBars} bars with adverse move${ord.isChop ? ' — chop fast exit' : ''})`);
           continue;
         }
 
@@ -918,11 +922,15 @@ function updateMarketPrice(asset, price) {
           ord.keeperStatus = `[Imp B] TP1 Hit ($${tp1Price.toFixed(2)}): Banked ${ord.tp1Percent}% ($${bankedPnL.toFixed(2)}). Runner locked at +10¢ trailing to TP2 ($${ord.takeProfit.toFixed(2)})`;
         }
 
-        // Improvement F: Dynamic Chandelier Trailing Stop (1.2× ATR) for runners
+        // Improvement F: Dynamic Chandelier Trailing Stop (1.2× ATR) for runners.
+        // Phase 2: shorts trail off lowestPrice (the FAVORABLE extreme),
+        // so the stop ratchets DOWN toward the entry as price falls and
+        // locks profit — the old highestPrice version could only push
+        // a short's stop further away (looser) as price rose against it.
         if (ord.tp1Hit && ord.trailingStopOffset) {
           const trailSL = ord.side === 'Long'
             ? ord.highestPrice - ord.trailingStopOffset
-            : ord.highestPrice + ord.trailingStopOffset;
+            : (ord.lowestPrice || ord.entryPrice) + ord.trailingStopOffset;
           if (ord.side === 'Long' && trailSL > ord.stopLoss) {
             ord.stopLoss = parseFloat(trailSL.toFixed(4));
             ord.keeperStatus = `[Imp F] Chandelier Trailing Stop: Ratcheted SL to $${ord.stopLoss} (1.2× ATR trail)`;
@@ -1030,7 +1038,10 @@ function closeOrder(pda, exitPrice, reason = 'MANUAL_CLOSE') {
 
   if (jupiter && typeof jupiter.closePosition === 'function' && ord.positionPDA) {
     try {
-      jupiter.closePosition(ord.positionPDA, ord.side, ord.asset).catch(e => {
+      // P0 safety: pass the order's own mode explicitly. Only a
+      // LIVE_ONCHAIN order may broadcast its close; paper orders only ever
+      // touch the paper store (jupiter.js enforces this + fails closed).
+      jupiter.closePosition(ord.positionPDA, ord.side, ord.asset, { paper: ord.executionMode !== 'LIVE_ONCHAIN', simulate: false }).catch(e => {
         console.warn('[BOT SERVICE] jupiter.closePosition notice:', e.message);
       });
     } catch (_) {}
@@ -1055,7 +1066,8 @@ function cancelOrder(pda) {
 
   if (jupiter && typeof jupiter.cancelOrder === 'function' && ord.requestPDA) {
     try {
-      jupiter.cancelOrder(ord.requestPDA).catch(e => {
+      // P0 safety: pass the order's own mode explicitly (see closePosition).
+      jupiter.cancelOrder(ord.requestPDA, { paper: ord.executionMode !== 'LIVE_ONCHAIN', simulate: false }).catch(e => {
         console.warn('[BOT SERVICE] jupiter.cancelOrder notice:', e.message);
       });
     } catch (_) {}
@@ -1069,8 +1081,33 @@ function placeSignalOrder(payload) {
     return { status: 'halted', message: 'Bot circuit breaker is active. Orders rejected.' };
   }
 
-  // Evaluate trade signal with Dynamic Strategy Auto-Preset Switcher
-  const decision = evaluateTradeSignal(payload, state.balance);
+  // P0 safety: server-side direction allowlist (Phase 2: longs + DESIGNED
+  // shorts). Longs: green/buy/long. Shorts: red/sell/short ONLY when the
+  // payload carries designedShort === true — the canonical engine's
+  // marker (src/engine/trigger.ts sets it when a mirror hook + 5m red
+  // confirmation fired). Anything else — yellow/standby, or a red
+  // payload without the marker — is rejected HERE, before evaluation
+  // or sizing. This is the second layer of the deliberate-short gate
+  // (the switcher enforces the same rule); neither layer alone
+  // re-opens the old "anything not long = short" mapping.
+  const rawDirection = String(payload.direction || payload.signal || 'green').toLowerCase();
+  const isLongDir = ['green', 'buy', 'long'].includes(rawDirection);
+  const isShortDir = ['red', 'sell', 'short'].includes(rawDirection);
+  if (!isLongDir && !(isShortDir && payload.designedShort === true)) {
+    console.warn(`[DIRECTION ALLOWLIST] Rejected signal direction: ${rawDirection} (designedShort=${payload.designedShort === true})`);
+    return {
+      status: 'rejected',
+      reason: 'DIRECTION_NOT_ALLOWED',
+      message: `Signal direction '${rawDirection}' is not allowed: longs (green/buy/long) are accepted, and shorts (red/sell/short) only when they carry the canonical engine's designedShort marker.`,
+    };
+  }
+
+  // Evaluate trade signal with Dynamic Strategy Auto-Preset Switcher.
+  // A monotonic evaluation counter is passed as barIndex so the
+  // switcher's circuit-breaker bar math (2 losses within 10 bars)
+  // counts real evaluations instead of a never-advancing 0.
+  state.evalCounter = (state.evalCounter || 0) + 1;
+  const decision = evaluateTradeSignal(payload, state.balance, state.evalCounter);
   if (!decision.execute) {
     console.warn(`[AUTO-SWITCHER REJECTION] ${decision.reason}`);
     return {
@@ -1078,14 +1115,13 @@ function placeSignalOrder(payload) {
       reason: decision.reason,
       message: decision.reason,
       circuitBreaker: decision.circuitBreaker,
+      ...(decision.feeInfo ? { feeInfo: decision.feeInfo } : {}),
     };
   }
 
-  // Dynamic Open Position Cap based on Equity Tier:
-  // Tier 1 ($0 - $99.99): strictly 1 open position
-  // Tier 2 ($100 - $249.99): up to 2 open positions
-  // Tier 3 ($250+): up to 3 open positions
-  const maxAllowedPositions = decision.preset.maxOpenPositions || (state.balance < 100 ? 1 : state.balance < 250 ? 2 : 3);
+  // Open position cap from the tier table (server execution policy,
+  // preserved: Tier 1 = 1, Tier 2 = 2, Tier 3 = 3).
+  const maxAllowedPositions = decision.preset.maxOpenPositions || 1;
   const activeOrders = Object.values(state.orders).filter(o => o.status === 'filled' || o.status === 'placed' || o.status === 'pending_keeper');
   if (activeOrders.length >= maxAllowedPositions) {
     console.warn(`[AUTO-SWITCHER POSITION CAP] Open position limit reached: ${activeOrders.length}/${maxAllowedPositions} for ${decision.preset.name}`);
@@ -1098,12 +1134,16 @@ function placeSignalOrder(payload) {
     };
   }
 
-  console.log(`[AUTO-SWITCHER EXECUTE] Tier: ${decision.preset.name} | Balance: $${state.balance.toFixed(2)} | Margin: $${decision.margin.toFixed(2)} | Leverage: ${decision.leverage}x ($${decision.notional.toFixed(2)} notional / ${decision.tokens || (decision.notional / price).toFixed(4)} SOL) | Risk Cap: ${(decision.preset.riskCapPct * 100).toFixed(0)}% (-$${decision.maxDollarLoss.toFixed(2)}) | Max Positions: ${maxAllowedPositions}`);
+  // Price is declared BEFORE the log line (Phase 2 TDZ fix: the old
+  // log line referenced `price` in a fallback that only evaluated when
+  // decision.tokens was falsy — a latent ReferenceError).
+  const price = parseFloat(payload.price) || 116.65;
+  console.log(`[AUTO-SWITCHER EXECUTE] Tier: ${decision.preset.name} | Side: ${decision.side || 'Long'} | Balance: $${state.balance.toFixed(2)} | Margin: $${decision.margin.toFixed(2)} | Leverage: ${decision.leverage}x ($${decision.notional.toFixed(2)} notional / ${decision.tokens} SOL) | Risk Cap: ${(decision.preset.riskCapPct * 100).toFixed(0)}% (-$${decision.maxDollarLoss.toFixed(2)}) | Max Positions: ${maxAllowedPositions}${decision.feeInfo ? ` | FeeRatio: ${decision.feeInfo.feeRatio}${decision.feeInfo.feeWarning ? ' (FEE WARNING)' : ''}` : ''}`);
 
   const asset = (payload.asset || 'SOL').toUpperCase();
-  const direction = (payload.direction || 'green').toLowerCase();
-  const side = (direction === 'green' || direction === 'buy' || direction === 'long') ? 'Long' : 'Short';
-  const price = parseFloat(payload.price) || 116.65;
+  // Direction was allowlisted at the top of this function; the
+  // canonical side comes from the switcher decision.
+  const side = decision.side || 'Long';
 
   const entryPrice = decision.entryPrice;
   const stopLoss = decision.stopLoss;
@@ -1112,7 +1152,9 @@ function placeSignalOrder(payload) {
   const tp2 = decision.tp2Dist;
   const tp1Percent = parseFloat(payload.tp1Percent) || decision.tp1Percent || 30;
   const tp2Percent = parseFloat(payload.tp2Percent) || decision.tp2Percent || 70;
-  const setupGrade = payload.setupGrade || 'GRADE_A';
+  // Setup grade comes from the server decision (default GRADE_B);
+  // the old payload-or-GRADE_A default overstated confidence.
+  const setupGrade = decision.setupGrade || 'GRADE_B';
   const limitOrderTTLMinutes = parseFloat(payload.limitOrderTTLMinutes) || 15;
   const earlyProfitLock = parseFloat(payload.earlyProfitLock) || 0.10;
   const trailingStopOffset = parseFloat(payload.trailingStopOffset) || parseFloat((0.35 * 1.2).toFixed(2));
@@ -1123,8 +1165,15 @@ function placeSignalOrder(payload) {
   const notional = decision.notional ? decision.notional : parseFloat((margin * leverage).toFixed(2));
   const tokens = decision.tokens || parseFloat((notional / (entryPrice || price)).toFixed(4));
 
-  // Real Account Execution Safety Interlock Check
-  const wantsLive = payload.simulate === false || (payload.simulate === undefined && state.executionMode === 'live_onchain');
+  // Unified execution decision (Phase 1 scope correction).
+  // The ENV-resolved mode decides what an order CAN be. A per-request
+  // flag (payload.simulate) can never escalate beyond it: in paper or
+  // simulate processes, no payload can force a broadcast. In a live
+  // process, an unarmed signal is REJECTED (not silently papered), so the
+  // operator always knows the process is live-configured but locked.
+  const resolvedMode = TRADING_MODE.effectiveMode; // 'paper' | 'simulate' | 'live'
+  const wantsSimulate = resolvedMode === 'simulate';
+  const wantsLive = resolvedMode === 'live' && state.executionMode === 'live_onchain';
 
   // 7) Jupiter Slippage Limit (maxSlippageBps: 5)
   // Swaps automatically abort if market spread widens beyond 5 bps (0.05%)
@@ -1142,7 +1191,26 @@ function placeSignalOrder(payload) {
     };
   }
 
+  // Live-configured but not armed: reject, never silently paper. (The
+  // operator chose live env; papering their signal would be a mode lie.)
+  if (resolvedMode === 'live' && !wantsLive) {
+    return {
+      status: 'rejected',
+      reason: 'SAFETY_INTERLOCK_ENGAGED',
+      message: 'Live mode is configured (PAPER_TRADING=false, SIMULATE_TX=false) but the safety toggle is not armed. Arm it via /safety-toggle after the audit passes, or restart in paper/simulate mode.',
+    };
+  }
+
   if (wantsLive) {
+    // A LIVE_ONCHAIN record must never be written for an order that could
+    // not reach Jupiter at all (e.g. module failed to load).
+    if (!jupiter || typeof jupiter.placeLimitOrder !== 'function') {
+      return {
+        status: 'rejected',
+        reason: 'JUPITER_MODULE_UNAVAILABLE',
+        message: 'Live execution rejected: the Jupiter module failed to load, so nothing can be broadcast. Refusing to record a LIVE_ONCHAIN order that never reached the chain.',
+      };
+    }
     if (!state.safetyToggle.enabled) {
       return {
         status: 'rejected',
@@ -1196,6 +1264,11 @@ function placeSignalOrder(payload) {
     earlyProfitLock,
     trailingStopOffset,
     highestPrice: entryPrice,
+    // Favorable-extreme tracking for the keeper chandelier (Phase 2):
+    // longs trail off highestPrice, shorts off lowestPrice. The old
+    // code tracked only highestPrice, so the short chandelier trailed
+    // off the ADVERSE extreme and could only loosen the stop.
+    lowestPrice: entryPrice,
     tp1Hit: false,
     margin,
     leverage,
@@ -1204,8 +1277,17 @@ function placeSignalOrder(payload) {
     maxMarginUsd: 500,
     maxSlippageBps: 5,
     maxDollarLoss: decision.maxDollarLoss,
-    regime: decision.preset ? decision.preset.id : 'RANGE_BOUND_SUPPORT',
-    executionMode: wantsLive ? 'LIVE_ONCHAIN' : 'AUTOTRADE_BOT',
+    // Regime is the market regime (Phase 2 fix: the old code stored
+    // the tier id here, so every trade record claimed a nonsense
+    // regime and the ledger's regime mapping defaulted everything to
+    // "Range Bound / Support").
+    regime: decision.regime || payload.regime || 'RANGE_BOUND_SUPPORT',
+    tier: decision.tier || null,
+    isChop: decision.isChop || false,
+    marginMultiplier: decision.marginMultiplier || 1,
+    designedShort: decision.designedShort || false,
+    feeInfo: decision.feeInfo || null,
+    executionMode: wantsLive ? 'LIVE_ONCHAIN' : (wantsSimulate ? 'SIMULATED' : 'AUTOTRADE_BOT'),
     type: 'Perp',
     status: 'placed',
     placedAt: Date.now(),
@@ -1217,7 +1299,9 @@ function placeSignalOrder(payload) {
     signerPublicKey: kpInfo ? kpInfo.publicKey : null,
     pnl: 0.0,
     pnlPercent: 0.0,
-    keeperStatus: wantsLive ? 'Submitted to Solana Anchor Program (Waiting keeper match)' : 'Waiting for keeper match on-chain / limit fill dip',
+    keeperStatus: wantsLive ? 'Broadcast requested — awaiting Jupiter confirmation'
+      : wantsSimulate ? 'Simulated on-chain (not broadcast) — awaiting simulation result'
+      : 'Waiting for keeper match on-chain / limit fill dip',
     closeReason: null,
     exitPrice: null,
   };
@@ -1225,7 +1309,17 @@ function placeSignalOrder(payload) {
   state.orders[randPda] = newOrder;
   persistState();
 
-  // Jupiter Perpetuals Integration Hook
+  // Jupiter Perpetuals Integration Hook (P0 safety + unified mode).
+  // Exactly one of three honest paths, chosen by ENV mode (never by a
+  // per-request flag):
+  //   paper    -> paper: true,  simulate: false -> local virtual record.
+  //   simulate -> paper: false, simulate: true  -> RPC simulation only.
+  //   live     -> paper: false, simulate: false -> real broadcast, and
+  //     only then is the order honestly LIVE_ONCHAIN. The safety interlock
+  //     above (module present + toggle + keypair + gas) already passed.
+  // The placement call is fire-and-forget, so 'placed' means "accepted",
+  // NOT "broadcast confirmed": keeperStatus is updated to the real outcome
+  // when Jupiter resolves; failures are recorded, never hidden.
   if (jupiter && typeof jupiter.placeLimitOrder === 'function') {
     try {
       jupiter.placeLimitOrder({
@@ -1236,15 +1330,31 @@ function placeSignalOrder(payload) {
         leverage,
         stopLoss,
         takeProfit,
-        paper: !wantsLive,
-        simulate: wantsLive,
+        paper: resolvedMode === 'paper',
+        simulate: wantsSimulate,
       }).then(resId => {
         console.log(`[BOT SERVICE] Jupiter Perps Order registered: ${resId}`);
+        if (state.orders[randPda]) {
+          if (wantsLive) state.orders[randPda].keeperStatus = `Broadcast submitted (request ${resId})`;
+          else if (wantsSimulate) state.orders[randPda].keeperStatus = `Simulated OK (not broadcast; request ${resId})`;
+          persistState();
+        }
       }).catch(err => {
-        console.warn(`[BOT SERVICE] Jupiter Perps placement notice: ${err.message}`);
+        console.error(`[BOT SERVICE] Jupiter Perps placement FAILED: ${err.message}`);
+        if (state.orders[randPda]) {
+          state.orders[randPda].keeperStatus = wantsLive
+            ? `JUPITER_BROADCAST_FAILED: ${err.message}`
+            : wantsSimulate ? `SIMULATION_FAILED: ${err.message}` : `JUPITER_PAPER_FAILED: ${err.message}`;
+          persistState();
+        }
       });
     } catch (err) {
       console.warn(`[BOT SERVICE] Jupiter Perps invocation notice: ${err.message}`);
+      if (state.orders[randPda]) {
+        state.orders[randPda].keeperStatus = wantsLive
+          ? `JUPITER_BROADCAST_FAILED: ${err.message}`
+          : wantsSimulate ? `SIMULATION_FAILED: ${err.message}` : `JUPITER_PAPER_FAILED: ${err.message}`;
+      }
     }
   }
 
@@ -1258,6 +1368,10 @@ function placeSignalOrder(payload) {
     leverage: newOrder.leverage,
     isSimulated: newOrder.isSimulated,
     signerPublicKey: newOrder.signerPublicKey,
+    // Resolved mode, so every consumer (UI toasts, logs) can display what
+    // actually happened instead of a hardcoded network claim.
+    tradingMode: resolvedMode,
+    network: TRADING_MODE.network,
   };
 }
 
@@ -1278,8 +1392,11 @@ function assembleJupiterOrderTx({ ownerPubkey, isLong = true, marginLamports = 0
   const tx = new Transaction();
   
   // 1. Compute Priority Fees (Mandatory for Solana Mainnet high volatility inclusion)
-  tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 250000 }));
-  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }));
+  // Phase 2: priority fees from the shared env-driven config (same
+  // values the fee guard uses), not hardcoded literals.
+  const _pf = getPriorityFeeConfig();
+  tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: _pf.microLamports }));
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: _pf.computeUnits }));
 
   // 2. WSOL Token Wrapping Logic (Jupiter Perps requires Wrapped SOL for Long positions)
   if (isLong && marginLamports > 0 && ownerPubkey) {
@@ -1310,13 +1427,8 @@ function getDeduplicatedTradesList() {
   // Include persisted trades
   if (Array.isArray(state.trades)) {
     for (const t of state.trades) {
-      if (t && (t.margin === 3 || t.margin === 3.0 || t.size === 3 || t.margin === 10.50)) {
-        t.margin = 600.00;
-        t.size = 600.00;
-        t.pnl = -0.30;
-        t.returnPct = -2.86;
-        t.pnlPercent = -2.86;
-      }
+      // P0 integrity: trades are reported exactly as recorded. (The old
+      // margin -> 600.00 / pnl -> -0.30 rewrite lived here too; removed.)
       const id = t.tradeId || t.id || t.requestPDA;
       if (id) map.set(id, t);
     }
@@ -1438,13 +1550,15 @@ function generateTradesCsv(trades) {
     const regime = `"${t.regime || 'Range Bound / Support'}"`;
     const side = `"${t.side || 'Long'}"`;
     const type = `"${t.type || 'TP1'}"`;
-    const entry = typeof t.entry === 'number' ? t.entry.toFixed(2) : typeof t.entryPrice === 'number' ? t.entryPrice.toFixed(2) : '116.56';
-    const exit = typeof t.exit === 'number' ? t.exit.toFixed(2) : typeof t.exitPrice === 'number' ? t.exitPrice.toFixed(2) : '117.31';
-    const margin = typeof t.margin === 'number' ? t.margin.toFixed(2) : '25.00';
+    // P0 integrity: never invent CSV values for missing fields. Empty cells
+    // are honest; the old hardcoded 116.56 / 117.31 / $0.17 were fabricated.
+    const entry = typeof t.entry === 'number' ? t.entry.toFixed(2) : typeof t.entryPrice === 'number' ? t.entryPrice.toFixed(2) : '';
+    const exit = typeof t.exit === 'number' ? t.exit.toFixed(2) : typeof t.exitPrice === 'number' ? t.exitPrice.toFixed(2) : '';
+    const margin = typeof t.margin === 'number' ? t.margin.toFixed(2) : '';
     const lev = `${t.lev || t.leverage || 20}×`;
     const pnl = typeof t.pnl === 'number' ? (t.pnl >= 0 ? `+$${t.pnl.toFixed(2)}` : `-$${Math.abs(t.pnl).toFixed(2)}`) : '$0.00';
     const retPct = typeof t.returnPct === 'number' ? `${t.returnPct >= 0 ? '+' : ''}${t.returnPct.toFixed(1)}%` : typeof t.pnlPercent === 'number' ? `${t.pnlPercent >= 0 ? '+' : ''}${t.pnlPercent.toFixed(1)}%` : '0.0%';
-    const fee = typeof t.fee === 'number' ? `$${t.fee.toFixed(2)}` : '$0.17';
+    const fee = typeof t.fee === 'number' ? `$${t.fee.toFixed(2)}` : '';
     const bal = typeof t.balance === 'number' ? `$${t.balance.toFixed(2)}` : `$${(state.balance || 30).toFixed(2)}`;
     const trdId = `"${t.tradeId || t.id || ''}"`;
     const mode = `"${t.executionMode || 'AUTOTRADE_BOT'}"`;
@@ -1463,10 +1577,14 @@ function handleApiRequest(req, res) {
   const pathname = urlObj.pathname.replace(/^\/api\/bot/, '');
   const method = req.method.toUpperCase();
 
-  // CORS headers
+  // CORS headers (P0 safety): never '*'. If DASHBOARD_ORIGIN is set, only
+  // that origin is allowed; otherwise no cross-origin access is granted
+  // (same-origin dashboard use needs no CORS headers at all).
   try {
     if (!res.headersSent) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (process.env.DASHBOARD_ORIGIN) {
+        res.setHeader('Access-Control-Allow-Origin', process.env.DASHBOARD_ORIGIN);
+      }
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
@@ -1480,6 +1598,10 @@ function handleApiRequest(req, res) {
     return;
   }
 
+  // NOTE: the bearer-token auth check lives AFTER sendJson/getBody below
+  // (it must: it calls sendJson). It was originally placed here and threw
+  // a TDZ ReferenceError, turning every 401 into a 500 — caught by the
+  // smoke test. Do not move it back above sendJson.
   const sendJson = (statusCode, data) => {
     if (res.headersSent) return;
     try {
@@ -1490,8 +1612,22 @@ function handleApiRequest(req, res) {
 
   const getBody = (cb) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let tooLarge = false;
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > 1024 * 1024) { // 1 MB cap: refuse oversized payloads
+        tooLarge = true;
+        try { req.destroy(); } catch (_) {}
+      }
+    });
+    req.on('error', () => {
+      if (!res.headersSent) sendJson(400, { error: 'Request body error.' });
+    });
     req.on('end', () => {
+      if (tooLarge) {
+        if (!res.headersSent) sendJson(413, { error: 'Payload too large (max 1 MB).' });
+        return;
+      }
       if (res.headersSent) return;
       try {
         const parsed = body ? JSON.parse(body) : {};
@@ -1501,6 +1637,47 @@ function handleApiRequest(req, res) {
       }
     });
   };
+
+  // P0 safety: bearer-token auth for every mutating route.
+  // Token comes ONLY from the BOT_AUTH_TOKEN env var (never from the repo).
+  // Fail closed: if NODE_ENV=production and no token is configured, all
+  // mutating routes are refused. In dev without a token, requests are
+  // allowed but loudly warned once, so local development still works.
+  const MUTATING_PATHS = new Set([
+    '/signal', '/close', '/cancel', '/wallet-config', '/safety-toggle',
+    '/mode', '/halt', '/resume', '/portfolio-balance', '/balance',
+    '/api/trades', '/trades', '/signal-status', '/api/bot/signal-status',
+    '/update-price', '/simulate-keeper-fill', '/airdrop',
+    '/reset-circuit-breaker', '/autotrade/toggle', '/api/bot/autotrade/toggle',
+  ]);
+  const isMutating = (method === 'POST' || method === 'DELETE') &&
+    (MUTATING_PATHS.has(pathname) || MUTATING_PATHS.has(urlObj.pathname));
+  if (isMutating) {
+    const token = process.env.BOT_AUTH_TOKEN || '';
+    if (!token) {
+      if (process.env.NODE_ENV === 'production') {
+        sendJson(503, { error: 'Mutating API disabled: BOT_AUTH_TOKEN is not configured on the server.' });
+        return;
+      }
+      if (!global.__botAuthWarned) {
+        global.__botAuthWarned = true;
+        console.warn('[AUTH] WARNING: BOT_AUTH_TOKEN is not set. Mutating routes are open in this non-production process. Set BOT_AUTH_TOKEN before any public deploy.');
+      }
+    } else {
+      const presented = (req.headers && req.headers.authorization) || '';
+      const expected = `Bearer ${token}`;
+      let ok = false;
+      try {
+        const a = Buffer.from(presented);
+        const b = Buffer.from(expected);
+        ok = a.length === b.length && crypto.timingSafeEqual(a, b);
+      } catch (_) { ok = false; }
+      if (!ok) {
+        sendJson(401, { error: 'Unauthorized: valid Bearer token required.' });
+        return;
+      }
+    }
+  }
 
   // 0a. GET /api/binance/klines
   if (method === 'GET' && (urlObj.pathname === '/api/binance/klines' || pathname === '/klines' || pathname === '/api/binance/klines')) {
@@ -1588,8 +1765,20 @@ function handleApiRequest(req, res) {
 
     if (method === 'POST') {
       getBody(payload => {
-        const entryP = parseFloat(Number(payload.entryPrice || payload.entry || state.marketPrice || 119.05).toFixed(4));
-        const exitP = parseFloat(Number(payload.exitPrice || payload.exit || state.marketPrice || 119.05).toFixed(4));
+        // P0 integrity: a manually logged trade must carry real prices.
+        // The old chain fell back to a fabricated 119.05; now an explicit
+        // price is required, else a fresh market price, else the request
+        // is rejected rather than recorded with invented numbers.
+        const freshMarket = (typeof state.marketPrice === 'number' && state.marketPrice > 0) ? state.marketPrice : null;
+        const entryRaw = payload.entryPrice ?? payload.entry ?? freshMarket;
+        const exitRaw = payload.exitPrice ?? payload.exit ?? freshMarket;
+        if (entryRaw === null || entryRaw === undefined || exitRaw === null || exitRaw === undefined ||
+            isNaN(Number(entryRaw)) || isNaN(Number(exitRaw))) {
+          sendJson(400, { error: 'entryPrice and exitPrice are required (no market price available to fall back on).' });
+          return;
+        }
+        const entryP = parseFloat(Number(entryRaw).toFixed(4));
+        const exitP = parseFloat(Number(exitRaw).toFixed(4));
         const side = payload.side === 'Short' ? 'Short' : 'Long';
         const notional = parseFloat(Number(payload.notional || (payload.margin || 25.00) * (payload.leverage || 20)).toFixed(2));
         const priceDiff = side === 'Long' ? exitP - entryP : entryP - exitP;
@@ -1815,11 +2004,22 @@ function handleApiRequest(req, res) {
     return;
   }
 
-  // 4. POST /close (supports single position close or full Panic Flatten)
+  // 4. POST /close (single position close, or explicit full flatten)
   if (method === 'POST' && pathname === '/close') {
     getBody(payload => {
-      // Panic Flatten: Close all open positions & cancel pending orders
-      if (payload.reason === 'PANIC_FLATTEN' || payload.closeAll || !payload.requestPDA) {
+      // P0 safety: a close MUST name its target. The old code flattened
+      // EVERYTHING whenever requestPDA was missing — which is exactly what
+      // dashboard.html's per-position Close button triggered, since it
+      // never sent requestPDA. A missing target with no explicit closeAll
+      // flag is now a 400, not a mass close.
+      // Deliberate kill-switch: an explicit closeAll: true (auth-gated,
+      // like every mutating route) still flattens everything on purpose.
+      if (!payload.requestPDA && !payload.positionPDA && !payload.closeAll) {
+        sendJson(400, { error: 'requestPDA (or positionPDA) is required to close a position. Pass closeAll: true explicitly to flatten everything.' });
+        return;
+      }
+      // Explicit Panic Flatten: Close all open positions & cancel pending orders
+      if (payload.closeAll) {
         const closedList = [];
         for (const pda of Object.keys(state.orders)) {
           const ord = state.orders[pda];
@@ -1906,6 +2106,10 @@ function handleApiRequest(req, res) {
       fillPrice: o.entryPrice,
       margin: o.margin,
       leverage: o.leverage,
+      // Phase 2: expose the TP distances so the UI can show real
+      // TP1/TP2 instead of a hardcoded $0.55.
+      tp1: o.tp1,
+      tp2: o.tp2,
       takeProfit: o.takeProfit,
       stopLoss: o.stopLoss,
       pnl: o.pnl || 0,
@@ -1922,6 +2126,16 @@ function handleApiRequest(req, res) {
       halted: state.isHalted,
       network: state.network,
       rpcUrl: state.rpcUrl,
+      // Unified resolved mode: the UI's source of truth for what this
+      // process will do (replaces hardcoded "Devnet" claims).
+      tradingMode: {
+        network: TRADING_MODE.network,
+        rpcUrl: TRADING_MODE.rpcUrl,
+        configuredMode: TRADING_MODE.configuredMode,
+        effectiveMode: TRADING_MODE.effectiveMode,
+        devnetForcedSimulate: TRADING_MODE.devnetForcedSimulate,
+        armed: TRADING_MODE.effectiveMode === 'live' && state.safetyToggle.enabled && state.executionMode === 'live_onchain',
+      },
       positions: positionsList,
       activePositionsCount: activeOrders.length,
       activeOrders: Object.values(state.orders),
@@ -1979,6 +2193,17 @@ function handleApiRequest(req, res) {
           safetyToggle: state.safetyToggle,
           executionMode: state.executionMode,
           message: 'Safety Interlock ENGAGED: Live trading disabled. Sandbox simulation active.',
+        });
+        return;
+      }
+
+      // Env gate (unified mode): arming live is impossible unless the
+      // process itself was started in live env mode. A UI toggle can never
+      // override env — otherwise "paper" on the dashboard could still arm.
+      if (TRADING_MODE.effectiveMode !== 'live') {
+        sendJson(400, {
+          success: false,
+          error: `Cannot arm live trading: this process runs in ${TRADING_MODE.effectiveMode.toUpperCase()} mode. Set PAPER_TRADING=false and SIMULATE_TX=false and restart the process to allow live arming.`,
         });
         return;
       }
@@ -2046,17 +2271,15 @@ function handleApiRequest(req, res) {
         }
 
         if (payload.network || payload.rpcUrl) {
-          if (payload.network) state.network = payload.network;
-          if (payload.rpcUrl && typeof payload.rpcUrl === 'string' && payload.rpcUrl.trim().startsWith('http')) {
-            state.rpcUrl = payload.rpcUrl.trim();
-            console.log(`[BOT SERVICE] Custom RPC configured: ${state.rpcUrl.split('?')[0]}`);
-          } else if (payload.network) {
-            state.rpcUrl = payload.network === 'mainnet-beta'
-              ? 'https://api.mainnet-beta.solana.com'
-              : 'https://api.devnet.solana.com';
-          }
-          const audit = await auditWalletAndSafety();
-          sendJson(200, { success: true, network: state.network, rpcUrl: state.rpcUrl, audit });
+          // Network/RPC are env configuration (SOLANA_NETWORK / SOLANA_RPC),
+          // not runtime switches: jupiter.js fixes its connection at module
+          // load, so a state-only switch would silently disagree with the
+          // signer. (The generate/import actions above still accept a
+          // network label for wallet FILE naming — that is not a switch.)
+          sendJson(400, {
+            success: false,
+            error: `Network/RPC cannot be changed at runtime (current: ${state.network}). Set SOLANA_NETWORK / SOLANA_RPC in the environment and restart the process.`,
+          });
           return;
         }
 
@@ -2107,14 +2330,27 @@ function handleApiRequest(req, res) {
   // 12. POST /mode (Toggle Training Wheels / Execution Mode)
   if (method === 'POST' && pathname === '/mode') {
     getBody(async (payload) => {
-      if (payload.network && (payload.network === 'devnet' || payload.network === 'mainnet-beta')) {
-        state.network = payload.network;
-        state.rpcUrl = payload.network === 'mainnet-beta' 
-          ? 'https://api.mainnet-beta.solana.com' 
-          : 'https://api.devnet.solana.com';
+      // Network is env configuration, not a runtime switch: jupiter.js
+      // fixes its connection at module load, so a state-only switch would
+      // silently disagree with the signer. Restart with SOLANA_NETWORK.
+      if (payload.network && payload.network !== state.network) {
+        sendJson(400, {
+          success: false,
+          error: `Network cannot be changed at runtime (current: ${state.network}). Set SOLANA_NETWORK=${payload.network} in the environment and restart the process.`,
+        });
+        return;
       }
 
       if (payload.mode === 'live_onchain') {
+        // Env gate (unified mode): /mode can ARM live only in a live-env
+        // process; it can never escalate a paper/simulate process.
+        if (TRADING_MODE.effectiveMode !== 'live') {
+          sendJson(400, {
+            success: false,
+            error: `Cannot switch to live mode: this process runs in ${TRADING_MODE.effectiveMode.toUpperCase()} mode. Set PAPER_TRADING=false and SIMULATE_TX=false and restart the process.`,
+          });
+          return;
+        }
         const audit = await auditWalletAndSafety();
         if (!audit.canArmLiveTrading) {
           sendJson(400, {
@@ -2273,4 +2509,7 @@ module.exports = {
   assembleJupiterOrderTx,
   handleApiRequest,
   startPort3001Server,
+  // Exported so server.cjs's daemon activation is real, not a no-op that
+  // still logs "AUTOTRADE DAEMON active" (the old misleading behavior).
+  startAutonomousKeeperDaemon,
 };
