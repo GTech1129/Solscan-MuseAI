@@ -101,20 +101,24 @@ export interface BacktestResult {
 
 export interface SimulationConfig {
   startBalance: number;
-  compoundRate: number; // 0 for fixed $11, 0.10, 0.25, 0.50
-  leverage: number; // default 60
+  // Phase 2 LEGACY fields — accepted for compatibility but IGNORED by
+  // the backtest. Sizing comes from the canonical trigger
+  // (src/engine/trigger.ts) + tier table (src/engine/tiers.ts), the
+  // same as live trading. The ConfigPanel no longer edits these.
+  compoundRate: number; // LEGACY (was: 0 for fixed $11, 0.10, 0.25, 0.50)
+  leverage: number; // LEGACY (was: default 60)
   candlesPerRegime: number; // default 500
   basePrice: number; // default 140
   seed: number; // default 42
-  tp1Dist: number; // default 0.35 (Fee-neutralized based on SOL 15m ATR & pullback wicks)
-  slAtrMult: number; // default 1.5 (Tightened Base Stop Loss cuts drawdown ~15%)
-  entryOffset: number; // default 0.08
+  tp1Dist: number; // LEGACY (was: default 0.35)
+  slAtrMult: number; // LEGACY (was: default 1.5)
+  entryOffset: number; // LEGACY (was: default 0.08)
   feeRate: number; // default 0.0008 (0.08%)
   minLockout: number; // default 10.00
-  lsdThreshold: number; // default 22.00
-  useDynamicOffset?: boolean; // ATR-based dynamic pullback: 0.25 * ATR (5¢–20¢) / 0.30 * ATR in Range (8¢–22¢)
-  flashCrashMode?: 'SIT_OUT' | 'DIVERGENCE_MICRO'; // Symmetrical 100% Cash Sit-Out vs 10% Divergence Bottom Buys
-  autoSwitchPresets?: boolean; // Auto-Preset Switcher: Tier 1 (20x LSD <$100), Tier 2 (35x $100-$250), Tier 3 (50x $250+)
+  lsdThreshold: number; // default 22.00 — display flag only in Phase 2 (equity-curve badges); no longer changes sizing
+  useDynamicOffset?: boolean; // LEGACY (was: ATR-based dynamic pullback)
+  flashCrashMode?: 'SIT_OUT' | 'DIVERGENCE_MICRO'; // LEGACY — flash crashes always sit out in Phase 2; DIVERGENCE_MICRO is ignored
+  autoSwitchPresets?: boolean; // LEGACY — tier sizing is always on in Phase 2
 }
 
 export interface MonteCarloSummary {
