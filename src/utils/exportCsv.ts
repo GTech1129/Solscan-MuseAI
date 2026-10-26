@@ -44,12 +44,15 @@ export function generateTradesCSV(
     'Return on Margin (%)',
     'Ending Balance ($)',
     'TP1 Hit',
-    'LSD Mode Active',
+    // Phase 2: the old "LSD Mode Active" column was computed from
+    // lev === 20, which is just Tier 1's base leverage (and boosted
+    // T1 trades are 30x) — and LSD sizing no longer exists. Replaced
+    // with the trade's actual side.
+    'Side',
   ];
 
   const rows = trades.map((t) => {
     const priceChange = t.exit - t.entry;
-    const isLSD = t.lev === 20;
 
     return [
       t.n,
@@ -71,7 +74,7 @@ export function generateTradesCSV(
       `${t.pnlPct.toFixed(2)}%`,
       t.balance.toFixed(2),
       t.tp1Hit ? 'YES' : 'NO',
-      isLSD ? 'ACTIVE (20x)' : 'STANDARD (60x)',
+      t.side ?? '—',
     ].join(',');
   });
 
